@@ -32,18 +32,19 @@ class LabelGenerator {
     try {
         // Validate and clean the data before feeding it to JsBarcode
         let barcodeData = String(data || '').replace(/\s/g, '');
-        if (barcodeData.length < 12 || barcodeData.length > 13) {
-            console.warn(`Invalid barcode data: "${data}". Using default test barcode.`);
+        
+        // 💥 FIX: Validation for EAN13 (must be 12 or 13 digits)
+        if (barcodeData.length < 12 || barcodeData.length > 13 || !/^\d+$/.test(barcodeData)) {
+            console.warn(`Invalid EAN-13 data: "${data}". Using default test barcode.`);
             barcodeData = "1234567890128"; // Default EAN-13 test value
         }
         
-        // 💥 FIX: Increased canvas size for higher resolution
         const canvas = createCanvas(1000, 300); 
       
         JsBarcode(canvas, barcodeData, {
-            format: "EAN13", 
+            format: "EAN13", // 💥 FIX: format is now EAN13
             width: 2,
-            height: 200, // 💥 FIX: Increased bar height
+            height: 200, 
             displayValue: false, 
             margin: 5
         });
@@ -55,12 +56,11 @@ class LabelGenerator {
     
   async generateQRCode(data) {
     try {
-        const qrDataString = JSON.stringify({
-            order: data.order_id,
-            sku: data.product_barcode
-        });
+        // Encoding only the raw product_barcode string as requested
+        const productBarcode = data.product_barcode || '2000000099064';
+        const qrDataString = productBarcode; 
 
-        const qrPixelWidth = 400; // 💥 FIX: Increased pixel size for higher resolution
+        const qrPixelWidth = 400; 
         const qrBuffer = await QRCode.toBuffer(qrDataString, {
           errorCorrectionLevel: 'M',
           type: 'png',
@@ -157,7 +157,7 @@ class LabelGenerator {
     
     // Re-use barcodeX and width for easy centering of the numbers below the bars
     doc.fontSize(this.barcodeNumberFontSize) 
-       .text(orderData.product_barcode || '1234567890123', barcodeX, numberTextY, {
+       .text(orderData.product_barcode || '1234567890128', barcodeX, numberTextY, {
            width: this.barcodeTargetWidth, 
            align: 'center' 
        });
