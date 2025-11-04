@@ -54,69 +54,90 @@ class LabelGenerator {
   }
 
   async createStickersPagePdf(orderData) {
-    const doc = new PDFDocument({
-      size: 'A4',
-      margins: { top: 20, bottom: 20, left: 20, right: 20 }
+  const doc = new PDFDocument({
+    size: 'A4',
+    margins: { top: 0, bottom: 0, left: 0, right: 0 }
+  });
+
+  const buffers = [];
+  doc.on('data', buffers.push.bind(buffers));
+
+  const barcodeBuffer = await this.generateBarcode(orderData.product_barcode);
+  const qrCodeBuffer = await this.generateQRCode(orderData.order_id);
+
+  const margin = 20;
+  const spacing = 10;
+  
+  // Calculate positions
+  const stickerWidth = this.stickerWidth;  // 58mm = 164.4 points
+  const stickerHeight = this.stickerHeight; // 40mm = 113.4 points
+  
+  const qrSize = 100; // Larger QR code in points
+  const barcodeHeight = 60;
+  const padding = 8;
+
+  // First sticker
+  let x = margin;
+  let y = margin;
+  
+  // Draw border for first sticker (optional, for debugging)
+  doc.rect(x, y, stickerWidth, stickerHeight).stroke();
+  
+  // QR code
+  doc.image(qrCodeBuffer, x + padding, y + padding, {
+    fit: [qrSize, qrSize]
+  });
+
+  // Barcode
+  const barcodeX = x + qrSize + padding * 2;
+  const barcodeWidth = stickerWidth - qrSize - padding * 3;
+  
+  doc.image(barcodeBuffer, barcodeX, y + padding + 10, {
+    fit: [barcodeWidth, barcodeHeight]
+  });
+
+  // Product code text
+  doc.fontSize(8)
+     .text(orderData.product_code || '', barcodeX, y + padding + barcodeHeight + 15, {
+       width: barcodeWidth,
+       align: 'center'
+     });
+
+  // Second sticker (next to first)
+  const secondX = x + stickerWidth + spacing;
+  
+  // Draw border for second sticker
+  doc.rect(secondX, y, stickerWidth, stickerHeight).stroke();
+  
+  // QR code
+  doc.image(qrCodeBuffer, secondX + padding, y + padding, {
+    fit: [qrSize, qrSize]
+  });
+
+  // Barcode
+  const secondBarcodeX = secondX + qrSize + padding * 2;
+  
+  doc.image(barcodeBuffer, secondBarcodeX, y + padding + 10, {
+    fit: [barcodeWidth, barcodeHeight]
+  });
+
+  // Product code text
+  doc.fontSize(8)
+     .text(orderData.product_code || '', secondBarcodeX, y + padding + barcodeHeight + 15, {
+       width: barcodeWidth,
+       align: 'center'
+     });
+
+  return new Promise((resolve, reject) => {
+    doc.on('end', async () => {
+      const pdfBuffer = Buffer.concat(buffers);
+      const pdfDoc = await PDFLibDocument.load(pdfBuffer);
+      resolve(pdfDoc);
     });
-
-    const buffers = [];
-    doc.on('data', buffers.push.bind(buffers));
-
-    const barcodeBuffer = await this.generateBarcode(orderData.product_barcode);
-    const qrCodeBuffer = await this.generateQRCode(orderData.order_id);
-
-    const margin = 20;
-    const spacing = 10;
-    const padding = 5;
-    const contentWidth = this.stickerWidth - (padding * 2);
-    const qrSize = 35;
-    const barcodeX = padding + qrSize + 5;
-    const barcodeWidth = contentWidth - qrSize - 5;
-
-    const currentY = margin;
-    
-    doc.image(qrCodeBuffer, margin + padding, currentY + padding, {
-      width: qrSize,
-      height: qrSize
-    });
-
-    doc.image(barcodeBuffer, margin + barcodeX, currentY + padding + 5, {
-      width: barcodeWidth,
-      height: 25
-    });
-
-    doc.fontSize(7).text(orderData.product_code || '', margin + barcodeX, currentY + padding + 32, {
-      width: barcodeWidth,
-      align: 'center'
-    });
-
-    const secondStickerX = margin + this.stickerWidth + spacing;
-    
-    doc.image(qrCodeBuffer, secondStickerX + padding, currentY + padding, {
-      width: qrSize,
-      height: qrSize
-    });
-
-    doc.image(barcodeBuffer, secondStickerX + barcodeX, currentY + padding + 5, {
-      width: barcodeWidth,
-      height: 25
-    });
-
-    doc.fontSize(7).text(orderData.product_code || '', secondStickerX + barcodeX, currentY + padding + 32, {
-      width: barcodeWidth,
-      align: 'center'
-    });
-
-    return new Promise((resolve, reject) => {
-      doc.on('end', async () => {
-        const pdfBuffer = Buffer.concat(buffers);
-        const pdfDoc = await PDFLibDocument.load(pdfBuffer);
-        resolve(pdfDoc);
-      });
-      doc.on('error', reject);
-      doc.end();
-    });
-  }
+    doc.on('error', reject);
+    doc.end();
+  });
+}
 
   async createCompleteLabelPack(orderData, marketplaceLabel) {
     let marketplaceLabelBuffer;
