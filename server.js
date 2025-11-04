@@ -22,14 +22,15 @@ class LabelGenerator {
     this.barcodeTargetWidth = 90;       // Bar width (becomes height after rotation)
     this.barcodeTargetHeight = 35;      // Bar height (becomes width after rotation)
     this.barcodeNumberFontSize = 8;     // Font size for the EAN-13 number
-    this.skuTextFontSize = 10;          // Smaller font for SKU
+    this.skuTextFontSize = 9;           // FIX: Changed from 10 to 9 to make it smaller
     this.kidslandFontSize = 7;          
     this.padding = 4;                   
+    this.barcodePadding = 2;          // FIX: New variable for tighter right-side padding
   }
 
   async generateBarcode(data) {
     try {
-        // 💥 FIX: Validate and clean the data before feeding it to JsBarcode
+        // FIX: Validate and clean the data before feeding it to JsBarcode
         let barcodeData = String(data || '').replace(/\s/g, '');
         if (barcodeData.length < 12 || barcodeData.length > 13) {
             console.warn(`Invalid barcode data: "${data}". Using default test barcode.`);
@@ -118,7 +119,8 @@ class LabelGenerator {
     const totalBlockWidth = this.barcodeTargetHeight + numberTextPostRotationWidth + 2; // ~35pt + ~12pt + 2pt
     
     // Barcode block X/Y position on the sticker
-    const barcodeBlockX = this.stickerWidth - totalBlockWidth - this.padding; 
+    // FIX: Using smaller barcodePadding to move closer to the right edge
+    const barcodeBlockX = this.stickerWidth - totalBlockWidth - this.barcodePadding; 
     const barcodeBlockY = (this.stickerHeight / 2) - (finalBarcodeBarsHeight / 2); 
 
     // --- Rotation Setup for both Bars and Numbers ---
@@ -159,6 +161,7 @@ class LabelGenerator {
     doc.translate(textCenterX, textCenterY)
        .rotate(90, { origin: [0, 0] });
 
+    // FIX: Using the smaller this.skuTextFontSize (9pt)
     doc.fontSize(this.skuTextFontSize)
        .text(orderData.product_code || 'SKU-TEST-001', -textWidth/2, -textLineHeight/2, { 
          width: textWidth,
