@@ -20,7 +20,7 @@ class LabelGenerator {
     // Defined sizes
     this.qrCodeTargetSize = 65;         
     this.barcodeTargetWidth = 90;       // Bar width (becomes height after rotation)
-    this.barcodeTargetHeight = 40;      // Bar height (becomes width after rotation)
+    this.barcodeTargetHeight = 35;      // Bar height (becomes width after rotation) - Slightly reduced for spacing
     this.barcodeNumberFontSize = 8;     // Font size for the EAN-13 number
     this.skuTextFontSize = 10;          // Smaller font for SKU
     this.kidslandFontSize = 7;          
@@ -29,16 +29,13 @@ class LabelGenerator {
 
   async generateBarcode(data) {
     try {
-      // Canvas size suitable for clean bar rendering
       const canvas = createCanvas(400, 100); 
       
-      // CRITICAL: Set displayValue to false 
-       // We will draw the numbers separately and unrotated.
       JsBarcode(canvas, data, {
         format: "EAN13", 
         width: 2,
         height: 60, 
-        displayValue: false, // <--- HIDE NUMBERS IN IMAGE
+        displayValue: false, // HIDE NUMBERS IN IMAGE
         margin: 5
       });
       return canvas.toBuffer('image/png');
@@ -48,7 +45,6 @@ class LabelGenerator {
   }
     
   async generateQRCode(data) {
-    // (No change here - generates QR code with order ID and SKU)
     try {
         const qrDataString = JSON.stringify({
             order: data.order_id,
@@ -108,35 +104,42 @@ class LabelGenerator {
        });
 
     // --- 2. Barcode Bars & Numbers Placement (Right Side, Rotated 90°) ---
-    const finalBarcodeBarsWidth = this.barcodeTargetHeight; // 40pt
+    // Bar dimensions after rotation: 
+    // Width (post-rotation) = barcodeTargetHeight (35pt)
+    // Height (post-rotation) = barcodeTargetWidth (90pt)
+    const finalBarcodeBarsWidth = this.barcodeTargetHeight; // 35pt
     const finalBarcodeBarsHeight = this.barcodeTargetWidth; // 90pt
     
-    // Add estimated space for the barcode number below the bars (post-rotation)
-    const totalBarcodeBlockHeight = finalBarcodeBarsHeight + this.barcodeNumberFontSize;
+    // Total rotated block includes space for the numbers after the bars
+    // Text height (8pt) becomes width (post-rotation)
+    const totalBlockWidth = finalBarcodeBarsWidth + this.barcodeNumberFontSize + 2; // Bars + Text + spacing
     
     // Barcode block position relative to the sticker edge
-    const barcodeBlockX = this.stickerWidth - finalBarcodeBarsWidth - this.padding; 
-    const barcodeBlockY = (this.stickerHeight / 2) - (totalBarcodeBlockHeight / 2); 
+    const barcodeBlockX = this.stickerWidth - totalBlockWidth - this.padding; 
+    const barcodeBlockY = (this.stickerHeight / 2) - (finalBarcodeBarsHeight / 2); 
 
-    // --- Rotation Setup for both Bars and Numbers ---
+    // --- Rotation Setup for both Bars and Numbers ---
     doc.save();
     // Translate to the top-right of the final rotated area
     doc.translate(barcodeBlockX + finalBarcodeBarsWidth, barcodeBlockY)
        .rotate(90, { origin: [0, 0] }); 
    
-    // A. Draw Barcode Bars Image (Original size 90x40)
+    // A. Draw Barcode Bars Image (Original size 90x35)
+    // Image position is set to bring it into the rotated view
     doc.image(barcodeBuffer, 0, -this.barcodeTargetWidth, { 
       width: this.barcodeTargetWidth, // 90
-      height: this.barcodeTargetHeight // 40
+      height: this.barcodeTargetHeight // 35
     });
 
     // B. Draw Barcode Numbers (Rotated 90 degrees with the bars)
-    // Position: Below the bars image (original height is 40pt)
-    const numberTextY = -this.barcodeTargetWidth + this.barcodeTargetHeight + 2; // Below the image
+    // Position: Below the bars image (original height is 35pt)
+    // X position: 2pt offset from the bars
+    const numberTextX = this.barcodeTargetHeight + 2; // Original height of bars (35) + spacing (2) = 37pt 
+    const numberTextY = -this.barcodeTargetWidth; // Align with the start of the barcode image
     const numberTextWidth = this.barcodeTargetWidth; // Align with the original barcode width
     
     doc.fontSize(this.barcodeNumberFontSize) 
-       .text(orderData.product_barcode || '1234567890123', 0, numberTextY, {
+       .text(orderData.product_barcode || '1234567890123', numberTextX, numberTextY, {
            width: numberTextWidth,
            align: 'center'
        });
@@ -177,7 +180,6 @@ class LabelGenerator {
   }
 
   async createCompleteLabelPack(orderData, marketplaceLabel) {
-    // (Rest of the function remains the same)
     let marketplaceLabelBuffer;
     if (typeof marketplaceLabel === 'string') {
       marketplaceLabelBuffer = this.base64ToBuffer(marketplaceLabel);
