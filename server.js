@@ -29,20 +29,24 @@ class LabelGenerator {
   async generateBarcode(data) {
     try {
       const canvas = createCanvas(350, 150); 
+      
+      // 💥 CHANGES HERE: Use EAN13 format and remove displayValue=true 
+       // or set text settings for JsBarcode to fix rectangle numbers.
       JsBarcode(canvas, data, {
-        format: "CODE128",
+        format: "EAN13", // <--- 1. Changed to EAN13
         width: 2,
         height: 60,
-        displayValue: true,
+        displayValue: true, 
         fontSize: 14,
-        margin: 5
+         textMargin: 0, // <--- 2. Add textMargin: 0
+         margin: 5
       });
       return canvas.toBuffer('image/png');
     } catch (err) {
       throw new Error(`Barcode generation failed: ${err.message}`);
     }
   }
-
+    
   async generateQRCode(data) {
     try {
         // Prepare the data to include both order ID and product barcode
@@ -160,7 +164,6 @@ class LabelGenerator {
     });
   }
 
-  // 💥 REINSTATED FUNCTION 💥
   async createCompleteLabelPack(orderData, marketplaceLabel) {
     let marketplaceLabelBuffer;
     if (typeof marketplaceLabel === 'string') {
@@ -189,8 +192,9 @@ class LabelGenerator {
   }
 }
 
-// ------------------------------------------------------------------
 const generator = new LabelGenerator();
+
+// --- Express Routes (Unchanged) ---
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'label-generator' });
