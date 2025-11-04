@@ -1,5 +1,6 @@
 const express = require('express');
 const PDFDocument = require('pdfkit');
+const { PDFDocument: PDFLibDocument } = require('pdf-lib');
 const QRCode = require('qrcode');
 const { createCanvas } = require('canvas');
 const JsBarcode = require('jsbarcode');
@@ -13,16 +14,13 @@ app.use(express.json({ limit: '50mb' }));
 class LabelGenerator {
   constructor() {
     // 58x40mm in points (1mm = 2.83465 points)
-    this.stickerWidth = 58 * 2.83465; // ~164 points
-    this.stickerHeight = 40 * 2.83465; // ~113 points
+    this.stickerWidth = 58 * 2.83465;
+    this.stickerHeight = 40 * 2.83465;
   }
 
   async generateBarcode(data) {
     try {
-      // Create canvas for barcode
       const canvas = createCanvas(250, 100);
-      
-      // Generate Code128 barcode
       JsBarcode(canvas, data, {
         format: "CODE128",
         width: 2,
@@ -31,7 +29,6 @@ class LabelGenerator {
         fontSize: 14,
         margin: 5
       });
-      
       return canvas.toBuffer('image/png');
     } catch (err) {
       throw new Error(`Barcode generation failed: ${err.message}`);
@@ -40,7 +37,6 @@ class LabelGenerator {
 
   async generateQRCode(data) {
     try {
-      // Generate QR code as buffer
       const qrBuffer = await QRCode.toBuffer(data, {
         errorCorrectionLevel: 'M',
         type: 'png',
@@ -73,14 +69,12 @@ class LabelGenerator {
     const padding = 5;
     const contentWidth = this.stickerWidth - (padding * 2);
     
-    // QR Code on the left
     const qrSize = 35;
     doc.image(qrCodeBuffer, padding, padding, {
       width: qrSize,
       height: qrSize
     });
 
-    // Barcode on the right
     const barcodeX = padding + qrSize + 5;
     const barcodeWidth = contentWidth - qrSize - 5;
     
@@ -89,7 +83,6 @@ class LabelGenerator {
       height: 25
     });
 
-    // Product code below barcode
     doc.fontSize(7)
        .text(orderData.product_code || '', barcodeX, padding + 32, {
          width: barcodeWidth,
@@ -103,64 +96,14 @@ class LabelGenerator {
     });
   }
 
-  async createCompleteLabelPack(orderData, marketplaceLabel) {
+  async createStickerPage() {
     const doc = new PDFDocument({
-      autoFirstPage: false
+      size: 'A4',
+      margins: { top: 20, bottom: 20, left: 20, right: 20 }
     });
 
     const buffers = [];
     doc.on('data', buffers.push.bind(buffers));
-
-    // Handle marketplace label
-    let labelBuffer;
-    if (typeof marketplaceLabel === 'string') {
-      labelBuffer = this.base64ToBuffer(marketplaceLabel);
-    } else if (Buffer.isBuffer(marketplaceLabel)) {
-      labelBuffer = marketplaceLabel;
-    } else {
-      throw new Error('Invalid marketplace label format');
-    }
-
-    // Page 1: Marketplace label
-// Check if it's a PDF or image
-const isPDF = labelBuffer[0] === 0x25 && labelBuffer[1] === 0x50 && labelBuffer[2] === 0x44 && labelBuffer[3] === 0x46; // %PDF
-
-if (isPDF) {
-  // For PDF labels, we'll add them as external content (note: this is a simplified approach)
-  doc.addPage({ size: 'A4' });
-  doc.fontSize(12).text('Marketplace Order Label', 50, 50);
-  doc.fontSize(10).text('(PDF label - print separately or merge manually)', 50, 70);
-  doc.fontSize(10).text(`Order ID: ${orderData.order_id}`, 50, 100);
-} else {
-  // For image labels
-  doc.addPage({ size: 'A4' });
-  doc.image(labelBuffer, 0, 0, {
-    fit: [doc.page.width, doc.page.height],
-    align: 'center',
-    valign: 'center'
-  });
-}
-
-    // Generate product sticker
-    const stickerBuffer = await this.createProductSticker(orderData);
-
-    // Page 2: Two product stickers
-    doc.addPage({ size: 'A4' });
-    
-    const margin = 20;
-    const spacing = 10;
-    
-    // First sticker
-    doc.image(stickerBuffer, margin, margin, {
-      width: this.stickerWidth,
-      height: this.stickerHeight
-    });
-
-    // Second sticker
-    doc.image(stickerBuffer, margin + this.stickerWidth + spacing, margin, {
-      width: this.stickerWidth,
-      height: this.stickerHeight
-    });
 
     return new Promise((resolve, reject) => {
       doc.on('end', () => resolve(Buffer.concat(buffers)));
@@ -168,21 +111,77 @@ if (isPDF) {
       doc.end();
     });
   }
+
+  async createCompleteLabelPack(orderData, marketplaceLabel) {
+    // Generate product sticker
+    const stickerBuffer = await this.createProductSticker(orderData);
+
+    // Handle marketplace label (decode if base64)
+    let marketplaceLabelBuffer;
+    if (typeof marketplaceLabel === 'string') {
+      marketplaceLabelBuffer = this.base64ToBuffer(marketplaceLabel);
+    } else if (Buffer.isBuffer(marketplaceLabel)) {
+      marketplaceLabelBuffer = marketplaceLabel;
+    } else {
+      throw new Error('Invalid marketplace label format');
+    }
+
+    // Load marketplace PDF
+    const marketplacePdf = await PDFLibDocument.load(marketplaceLabelBuffer);
+
+    // Create a new PDF for stickers page with two stickers
+    const stickersPagePdf = await PDFLibDocument.create();
+    const page = stickersPagePdf.addPage([595, 842]); // A4 size in points
+
+    // Load sticker as image and embed it twice
+    const stickerImage = await stickersPagePdf.embedPng(stickerBuffer);
+    
+    const margin = 20;
+    const spacing = 10;
+    
+    // First sticker
+    page.drawImage(stickerImage, {
+      x: margin,
+      y: 842 - margin - this.stickerHeight, // A4 height - margin - sticker height
+      width: this.stickerWidth,
+      height: this.stickerHeight,
+    });
+
+    // Second sticker
+    page.drawImage(stickerImage, {
+      x: margin + this.stickerWidth + spacing,
+      y: 842 - margin - this.stickerHeight,
+      width: this.stickerWidth,
+      height: this.stickerHeight,
+    });
+
+    // Create final merged PDF
+    const mergedPdf = await PDFLibDocument.create();
+
+    // Copy all pages from marketplace PDF
+    const marketplacePages = await mergedPdf.copyPages(marketplacePdf, marketplacePdf.getPageIndices());
+    marketplacePages.forEach((page) => mergedPdf.addPage(page));
+
+    // Copy stickers page
+    const stickerPages = await mergedPdf.copyPages(stickersPagePdf, [0]);
+    stickerPages.forEach((page) => mergedPdf.addPage(page));
+
+    // Save and return
+    const mergedPdfBytes = await mergedPdf.save();
+    return Buffer.from(mergedPdfBytes);
+  }
 }
 
 const generator = new LabelGenerator();
 
-// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'label-generator' });
 });
 
-// Main endpoint for label generation
 app.post('/generate-label', async (req, res) => {
   try {
     const { orderData, marketplaceLabel } = req.body;
 
-    // Validate required fields
     if (!orderData || !marketplaceLabel) {
       return res.status(400).json({ 
         error: 'Missing required fields: orderData and marketplaceLabel' 
@@ -197,12 +196,10 @@ app.post('/generate-label', async (req, res) => {
 
     console.log('Generating label for order:', orderData.order_id);
 
-    // Generate the complete PDF
     const pdfBuffer = await generator.createCompleteLabelPack(orderData, marketplaceLabel);
 
     console.log('Label generated successfully, size:', pdfBuffer.length);
 
-    // Return as base64 for easy handling in n8n
     res.json({
       success: true,
       pdf: pdfBuffer.toString('base64'),
@@ -218,7 +215,6 @@ app.post('/generate-label', async (req, res) => {
   }
 });
 
-// Endpoint to fetch marketplace label and generate
 app.post('/generate-from-order', async (req, res) => {
   try {
     const { orderData, marketplaceLabelUrl, authHeaders } = req.body;
@@ -231,7 +227,6 @@ app.post('/generate-from-order', async (req, res) => {
 
     console.log('Fetching marketplace label from:', marketplaceLabelUrl);
 
-    // Fetch marketplace label
     const response = await axios.get(marketplaceLabelUrl, {
       headers: authHeaders || {},
       responseType: 'arraybuffer'
@@ -241,7 +236,6 @@ app.post('/generate-from-order', async (req, res) => {
 
     console.log('Marketplace label fetched, generating PDF...');
 
-    // Generate the complete PDF
     const pdfBuffer = await generator.createCompleteLabelPack(orderData, marketplaceLabel);
 
     console.log('Label generated successfully');
