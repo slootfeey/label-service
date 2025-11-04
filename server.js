@@ -18,7 +18,7 @@ class LabelGenerator {
     this.stickerHeight = 40 * 2.83465; // ~113.38 points
     
     // Defined sizes
-    this.qrCodeTargetSize = 65;         
+    this.qrCodeTargetSize = 45;         
     this.barcodeTargetWidth = 90;       // Bar width (becomes height after rotation)
     this.barcodeTargetHeight = 35;      // Bar height (becomes width after rotation)
     this.barcodeNumberFontSize = 8;     // Font size for the EAN-13 number
@@ -35,7 +35,7 @@ class LabelGenerator {
         format: "EAN13", 
         width: 2,
         height: 60, 
-        displayValue: false, // HIDE NUMBERS IN IMAGE
+        displayValue: false, // HIDE NUMBERS IN IMAGE - We draw them separately
         margin: 5
       });
       return canvas.toBuffer('image/png');
@@ -107,9 +107,9 @@ class LabelGenerator {
     const finalBarcodeBarsWidth = this.barcodeTargetHeight; // 35pt
     const finalBarcodeBarsHeight = this.barcodeTargetWidth; // 90pt
     
-    // Total rotated block includes space for the numbers after the bars
-    // Text height (8pt) becomes width (post-rotation)
-    const totalBlockWidth = finalBarcodeBarsWidth + this.barcodeNumberFontSize + 2; 
+    // Calculate total space needed for bars (35pt) + numbers (approx 1.5x font size + gap)
+    const numberTextPostRotationWidth = this.barcodeNumberFontSize * 1.5; 
+    const totalBlockWidth = finalBarcodeBarsWidth + numberTextPostRotationWidth + 2; 
     
     // Barcode block position relative to the sticker edge
     const barcodeBlockX = this.stickerWidth - totalBlockWidth - this.padding; 
@@ -117,25 +117,25 @@ class LabelGenerator {
 
     // --- Rotation Setup for both Bars and Numbers ---
     doc.save();
-    // Translate to the top-right corner of the final bounding box
-    doc.translate(barcodeBlockX + finalBarcodeBarsWidth, barcodeBlockY)
+    // Translate to the top-right corner of the *bars* area
+    doc.translate(barcodeBlockX + finalBarcodeBarsWidth, barcodeBlockY) 
        .rotate(90, { origin: [0, 0] }); 
    
-    // A. Draw Barcode Bars Image (Original size 90x35)
-    // CRITICAL FIX: To cancel the rotation and translation, draw at (-OriginalHeight, -OriginalWidth)
-    doc.image(barcodeBuffer, -this.barcodeTargetHeight, -this.barcodeTargetWidth, { 
+    // A. Draw Barcode Bars Image (Original size 90 wide x 35 high)
+    // FIX: Draw at (0, -OriginalWidth) to correctly place the top-left of the original image
+    doc.image(barcodeBuffer, 0, -this.barcodeTargetWidth, { // <--- CRITICAL FIX: X coordinate is now 0
       width: this.barcodeTargetWidth, // 90
       height: this.barcodeTargetHeight // 35
     });
 
     // B. Draw Barcode Numbers (Rotated 90 degrees with the bars)
-    // X position: Just past the bars (positive X in the rotated frame)
-    const numberTextX = 2; // X position: 2pt offset from the original image end
-    const numberTextY = -this.barcodeTargetWidth; // Y position: Aligned with the top of the bars (-90)
+    // Position: Just past the bars (X=Original Height)
+    const numberTextX = this.barcodeTargetHeight + 2; 
+    const numberTextY = -this.barcodeTargetWidth; // Aligned with the top of the bars (-90)
     
     doc.fontSize(this.barcodeNumberFontSize) 
        .text(orderData.product_barcode || '1234567890123', numberTextX, numberTextY, {
-           width: this.barcodeTargetHeight, // Use the vertical space (original height of bars)
+           width: this.barcodeTargetWidth, // Use the vertical space (original width of bars)
            align: 'left' 
        });
     
