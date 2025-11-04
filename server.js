@@ -122,12 +122,24 @@ class LabelGenerator {
     }
 
     // Page 1: Marketplace label
-    doc.addPage({ size: 'A4' });
-    doc.image(labelBuffer, 0, 0, {
-      fit: [doc.page.width, doc.page.height],
-      align: 'center',
-      valign: 'center'
-    });
+// Check if it's a PDF or image
+const isPDF = labelBuffer[0] === 0x25 && labelBuffer[1] === 0x50 && labelBuffer[2] === 0x44 && labelBuffer[3] === 0x46; // %PDF
+
+if (isPDF) {
+  // For PDF labels, we'll add them as external content (note: this is a simplified approach)
+  doc.addPage({ size: 'A4' });
+  doc.fontSize(12).text('Marketplace Order Label', 50, 50);
+  doc.fontSize(10).text('(PDF label - print separately or merge manually)', 50, 70);
+  doc.fontSize(10).text(`Order ID: ${orderData.order_id}`, 50, 100);
+} else {
+  // For image labels
+  doc.addPage({ size: 'A4' });
+  doc.image(labelBuffer, 0, 0, {
+    fit: [doc.page.width, doc.page.height],
+    align: 'center',
+    valign: 'center'
+  });
+}
 
     // Generate product sticker
     const stickerBuffer = await this.createProductSticker(orderData);
