@@ -55,7 +55,7 @@ class LabelGenerator {
 
   async createStickersPagePdf(orderData) {
   const doc = new PDFDocument({
-    size: 'A4',
+    size: [this.stickerWidth, this.stickerHeight],
     margins: { top: 0, bottom: 0, left: 0, right: 0 }
   });
 
@@ -65,66 +65,40 @@ class LabelGenerator {
   const barcodeBuffer = await this.generateBarcode(orderData.product_barcode);
   const qrCodeBuffer = await this.generateQRCode(orderData.order_id);
 
-  const margin = 20;
-  const spacing = 10;
+  const padding = 5;
   
-  // Calculate positions
-  const stickerWidth = this.stickerWidth;  // 58mm = 164.4 points
-  const stickerHeight = this.stickerHeight; // 40mm = 113.4 points
+  // Smaller QR code (30mm instead of 35mm)
+  const qrSize = 30 * 2.83465; // 30mm = ~85 points
   
-  const qrSize = 100; // Larger QR code in points
-  const barcodeHeight = 60;
-  const padding = 8;
-
-  // First sticker
-  let x = margin;
-  let y = margin;
-  
-  // Draw border for first sticker (optional, for debugging)
-  doc.rect(x, y, stickerWidth, stickerHeight).stroke();
-  
-  // QR code
-  doc.image(qrCodeBuffer, x + padding, y + padding, {
-    fit: [qrSize, qrSize]
+  // QR code on the left
+  doc.image(qrCodeBuffer, padding, padding, {
+    width: qrSize,
+    height: qrSize
   });
 
-  // Barcode
-  const barcodeX = x + qrSize + padding * 2;
-  const barcodeWidth = stickerWidth - qrSize - padding * 3;
+  // Rotate and place barcode vertically on the right
+  doc.save();
   
-  doc.image(barcodeBuffer, barcodeX, y + padding + 10, {
-    fit: [barcodeWidth, barcodeHeight]
+  // Position for rotated barcode
+  const barcodeX = this.stickerWidth - padding - 60; // 60 is rotated barcode width
+  const barcodeY = padding;
+  
+  // Move to position and rotate 90 degrees
+  doc.translate(barcodeX + 30, barcodeY) // Move to center of barcode area
+     .rotate(90, { origin: [0, 0] });
+  
+  // Draw barcode (now vertical)
+  doc.image(barcodeBuffer, -30, 0, {
+    width: 60,
+    height: this.stickerHeight - padding * 2 - 20
   });
-
-  // Product code text
-  doc.fontSize(8)
-     .text(orderData.product_code || '', barcodeX, y + padding + barcodeHeight + 15, {
-       width: barcodeWidth,
-       align: 'center'
-     });
-
-  // Second sticker (next to first)
-  const secondX = x + stickerWidth + spacing;
   
-  // Draw border for second sticker
-  doc.rect(secondX, y, stickerWidth, stickerHeight).stroke();
-  
-  // QR code
-  doc.image(qrCodeBuffer, secondX + padding, y + padding, {
-    fit: [qrSize, qrSize]
-  });
+  doc.restore();
 
-  // Barcode
-  const secondBarcodeX = secondX + qrSize + padding * 2;
-  
-  doc.image(barcodeBuffer, secondBarcodeX, y + padding + 10, {
-    fit: [barcodeWidth, barcodeHeight]
-  });
-
-  // Product code text
-  doc.fontSize(8)
-     .text(orderData.product_code || '', secondBarcodeX, y + padding + barcodeHeight + 15, {
-       width: barcodeWidth,
+  // Product code text at bottom
+  doc.fontSize(7)
+     .text(orderData.product_code || '', padding, this.stickerHeight - 15, {
+       width: this.stickerWidth - padding * 2,
        align: 'center'
      });
 
@@ -140,28 +114,33 @@ class LabelGenerator {
 }
 
   async createCompleteLabelPack(orderData, marketplaceLabel) {
-    let marketplaceLabelBuffer;
-    if (typeof marketplaceLabel === 'string') {
-      marketplaceLabelBuffer = this.base64ToBuffer(marketplaceLabel);
-    } else if (Buffer.isBuffer(marketplaceLabel)) {
-      marketplaceLabelBuffer = marketplaceLabel;
-    } else {
-      throw new Error('Invalid marketplace label format');
-    }
-
-    const marketplacePdf = await PDFLibDocument.load(marketplaceLabelBuffer);
-    const stickersPdf = await this.createStickersPagePdf(orderData);
-    const mergedPdf = await PDFLibDocument.create();
-
-    const marketplacePages = await mergedPdf.copyPages(marketplacePdf, marketplacePdf.getPageIndices());
-    marketplacePages.forEach((page) => mergedPdf.addPage(page));
-
-    const stickerPages = await mergedPdf.copyPages(stickersPdf, [0]);
-    stickerPages.forEach((page) => mergedPdf.addPage(page));
-
-    const mergedPdfBytes = await mergedPdf.save();
-    return Buffer.from(mergedPdfBytes);
+  let marketplaceLabelBuffer;
+  if (typeof marketplaceLabel === 'string') {
+    marketplaceLabelBuffer = this.base64ToBuffer(marketplaceLabel);
+  } else if (Buffer.isBuffer(marketplaceLabel)) {
+    marketplaceLabelBuffer = marketplaceLabel;
+  } else {
+    throw new Error('Invalid marketplace label format');
   }
+
+  const marketplacePdf = await PDFLibDocument.load(marketplaceLabelBuffer);
+  const stickerPdf = await this.createStickersPagePdf(orderData);
+  const mergedPdf = await PDFLibDocument.create();
+
+  // Page 1: Marketplace label
+  const marketplacePages = await mergedPdf.copyPages(marketplacePdf, marketplacePdf.getPageIndices());
+  marketplacePages.forEach((page) => mergedPdf.addPage(page));
+
+  // Page 2: First sticker
+  const firstStickerPages = await mergedPdf.copyPages(stickerPdf, [0]);
+  firstStickerPages.forEach((page) => mergedPdf.addPage(page));
+
+  // Page 3: Second sticker (duplicate)
+  const secondStickerPages = await mergedPdf.copyPages(stickerPdf, [0]);
+  secondStickerPages.forEach((page) => mergedPdf.addPage(page));
+
+  const mergedPdfBytes = await mergedPdf.save();
+  return Buffer.from(mergedPdfBytes);
 }
 
 const generator = new LabelGenerator();
