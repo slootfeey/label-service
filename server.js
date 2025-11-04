@@ -167,21 +167,30 @@ class LabelGenerator {
   }
 
   // -----------------------------------------------------------
-  //  Rotate portrait page → landscape (final sticker size)
+  //  Rotate portrait sticker → landscape (90° clockwise)
   // -----------------------------------------------------------
   async rotatePageToLandscape(stickerPdf) {
     const rotated = await PDFLibDocument.create();
-    const [page] = await rotated.copyPages(stickerPdf, [0]);
-    const rotatedPage = rotated.addPage([this.physicalWidthMm * 2.83465, this.physicalHeightMm * 2.83465]);
 
-    // PDF-Lib rotate is clockwise 90°
-    page.setRotation(90);
-    rotatedPage.drawPage(page, {
-      x: 0,
-      y: 0,
-      width: rotatedPage.getWidth(),
-      height: rotatedPage.getHeight(),
-    });
+    // Copy original portrait page
+    const [originalPage] = await rotated.copyPages(stickerPdf, [0]);
+
+    // Final sticker size: 58mm × 40mm
+    const finalWidth = this.physicalWidthMm * 2.83465;
+    const finalHeight = this.physicalHeightMm * 2.83465;
+    const page = rotated.addPage([finalWidth, finalHeight]);
+
+    // Get content stream
+    const content = page.node.context();
+
+    // Apply 90° clockwise rotation:
+    // Matrix: [0, 1, -1, 0, width, 0]
+    // This maps (x,y) → (width - y, x)
+    content
+      .q()                                   // save graphics state
+      .cm(0, 1, -1, 0, finalWidth, 0)        // rotate 90° clockwise
+      .doXObject(originalPage.node)          // draw original page
+      .Q();                                  // restore
 
     const bytes = await rotated.save();
     return Buffer.from(bytes);
