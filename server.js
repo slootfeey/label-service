@@ -13,16 +13,16 @@ app.use(express.json({ limit: '50mb' }));
 
 class LabelGenerator {
   constructor() {
-    this.stickerWidth = 58 * 2.83465;
-    this.stickerHeight = 40 * 2.83465;
-    
-    this.qrCodeTargetSize = 65;
-    this.barcodeTargetWidth = 90;
-    this.barcodeTargetHeight = 40;
-    this.skuTextFontSize = 18;
-    this.kidslandFontSize = 7;
-    this.padding = 4;
-  }
+  this.stickerWidth = 58 * 2.83465;
+  this.stickerHeight = 40 * 2.83465;
+  
+  this.qrCodeTargetSize = 40;  // Changed from 65 to 40
+  this.barcodeTargetWidth = 90;
+  this.barcodeTargetHeight = 35;  // Changed from 40 to 35
+  this.skuTextFontSize = 8;  // Changed from 18 to 8
+  this.kidslandFontSize = 7;
+  this.padding = 4;
+}
 
   async generateBarcode(data) {
     try {
@@ -106,15 +106,15 @@ class LabelGenerator {
     const barcodeFinalY = (this.stickerHeight / 2) - (finalBarcodeHeight / 2);
 
     doc.save();
-    doc.translate(barcodeFinalX + finalBarcodeWidth, barcodeFinalY + finalBarcodeHeight)
-       .rotate(180, { origin: [0, 0] });
-    
-    doc.image(barcodeBuffer, 0, 0, {
-      width: this.barcodeTargetWidth,
-      height: this.barcodeTargetHeight
-    });
-    
-    doc.restore(); 
+doc.translate(barcodeFinalX + finalBarcodeWidth, barcodeFinalY)
+   .rotate(90, { origin: [0, 0] });  // Changed from 180 to 90
+
+doc.image(barcodeBuffer, 0, -this.barcodeTargetWidth, {  // Changed Y position
+  width: this.barcodeTargetWidth,
+  height: this.barcodeTargetHeight
+});
+
+doc.restore();
 
     const textX = qrX + this.qrCodeTargetSize + this.padding * 2; 
     const textWidth = barcodeFinalX - textX - this.padding; 
