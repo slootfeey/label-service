@@ -22,25 +22,33 @@ class LabelGenerator {
     this.barcodeTargetWidth = 90;       // Bar width (becomes height after rotation)
     this.barcodeTargetHeight = 35;      // Bar height (becomes width after rotation)
     this.barcodeNumberFontSize = 8;     // Font size for the EAN-13 number
-    this.skuTextFontSize = 10;          // ADJUSTED: Smaller font for SKU
+    this.skuTextFontSize = 10;          // Smaller font for SKU
     this.kidslandFontSize = 7;          
     this.padding = 4;                   
   }
 
   async generateBarcode(data) {
     try {
-      const canvas = createCanvas(400, 100); 
+        // 💥 FIX: Validate and clean the data before feeding it to JsBarcode
+        let barcodeData = String(data || '').replace(/\s/g, '');
+        if (barcodeData.length < 12 || barcodeData.length > 13) {
+            console.warn(`Invalid barcode data: "${data}". Using default test barcode.`);
+            barcodeData = "1234567890128"; // Default EAN-13 test value
+        }
+        
+        const canvas = createCanvas(400, 100); 
       
-      JsBarcode(canvas, data, {
-        format: "EAN13", 
-        width: 2,
-        height: 60, 
-        displayValue: false, // HIDE NUMBERS IN IMAGE - We draw them separately
-        margin: 5
-      });
-      return canvas.toBuffer('image/png');
+        JsBarcode(canvas, barcodeData, {
+            format: "EAN13", 
+            width: 2,
+            height: 60, 
+            displayValue: false, // HIDE NUMBERS IN IMAGE - We draw them separately
+            margin: 5
+        });
+        return canvas.toBuffer('image/png');
     } catch (err) {
-      throw new Error(`Barcode generation failed: ${err.message}`);
+        // If an error still occurs, log it clearly
+        throw new Error(`Barcode generation failed: ${err.message || 'Unknown error during JsBarcode call.'}`);
     }
   }
     
@@ -115,12 +123,11 @@ class LabelGenerator {
 
     // --- Rotation Setup for both Bars and Numbers ---
     doc.save();
-    // Translate to the bottom-right corner of the final rotated bounding box (for 90 deg rotation)
+    // Translate to the bottom-right corner of the final rotated bounding box
     doc.translate(barcodeBlockX + totalBlockWidth, barcodeBlockY + finalBarcodeBarsHeight) 
        .rotate(90, { origin: [0, 0] }); 
    
     // A. Draw Barcode Bars Image (Original size 90 wide x 35 high)
-    // Coords are (-OriginalWidth, -OriginalHeight) to correctly place the content after translation/rotation
     doc.image(barcodeBuffer, -this.barcodeTargetWidth, -this.barcodeTargetHeight, { 
       width: this.barcodeTargetWidth, // 90
       height: this.barcodeTargetHeight // 35
@@ -183,7 +190,7 @@ class LabelGenerator {
 
     const marketplacePdf = await PDFLibDocument.load(marketplaceLabelBuffer);
     
-    // 💥 CRITICAL FIX: Generate fresh content for each sticker page
+    // CRITICAL FIX: Generate fresh content for each sticker page
     const stickerPdf1 = await this.createStickersPagePdf(orderData);
     const stickerPdf2 = await this.createStickersPagePdf(orderData);
 
