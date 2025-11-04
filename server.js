@@ -18,28 +18,28 @@ class LabelGenerator {
     this.stickerHeight = 40 * 2.83465; // ~113.38 points
     
     // Defined sizes
-    this.qrCodeTargetSize = 65;         // Larger QR code (~23 mm)
-    this.barcodeTargetWidth = 90;       // Wider barcode (becomes height after rotation)
-    this.barcodeTargetHeight = 40;      // Taller barcode (becomes width after rotation)
-    this.skuTextFontSize = 18;          // Large font for SKU in the center
-    this.kidslandFontSize = 7;          // Small font for "kidsland"
-    this.padding = 4;                   // General padding
+    this.qrCodeTargetSize = 65;         
+    this.barcodeTargetWidth = 90;       // Bar width (becomes height after rotation)
+    this.barcodeTargetHeight = 40;      // Bar height (becomes width after rotation)
+    this.barcodeNumberFontSize = 8;     // Font size for the EAN-13 number
+    this.skuTextFontSize = 10;          // Smaller font for SKU
+    this.kidslandFontSize = 7;          
+    this.padding = 4;                   
   }
 
   async generateBarcode(data) {
     try {
-      const canvas = createCanvas(350, 150); 
+      // Canvas size suitable for clean bar rendering
+      const canvas = createCanvas(400, 100); 
       
-      // 💥 CHANGES HERE: Use EAN13 format and remove displayValue=true 
-       // or set text settings for JsBarcode to fix rectangle numbers.
+      // CRITICAL: Set displayValue to false 
+       // We will draw the numbers separately and unrotated.
       JsBarcode(canvas, data, {
-        format: "EAN13", // <--- 1. Changed to EAN13
+        format: "EAN13", 
         width: 2,
-        height: 60,
-        displayValue: true, 
-        fontSize: 14,
-         textMargin: 0, // <--- 2. Add textMargin: 0
-         margin: 5
+        height: 60, 
+        displayValue: false, // <--- HIDE NUMBERS IN IMAGE
+        margin: 5
       });
       return canvas.toBuffer('image/png');
     } catch (err) {
@@ -48,14 +48,13 @@ class LabelGenerator {
   }
     
   async generateQRCode(data) {
+    // (No change here - generates QR code with order ID and SKU)
     try {
-        // Prepare the data to include both order ID and product barcode
         const qrDataString = JSON.stringify({
             order: data.order_id,
             sku: data.product_barcode
         });
 
-        // Generate a high-resolution QR image for good scaling
         const qrPixelWidth = 200; 
         const qrBuffer = await QRCode.toBuffer(qrDataString, {
           errorCorrectionLevel: 'M',
@@ -90,17 +89,14 @@ class LabelGenerator {
     const kidslandTextHeight = 10; 
     const totalLeftBlockHeight = this.qrCodeTargetSize + this.padding + kidslandTextHeight;
     
-    // QR Y: Vertically center the entire QR + text block
     const qrX = this.padding;
     const qrY = (this.stickerHeight / 2) - (totalLeftBlockHeight / 2);
     
-    // Draw QR Code
     doc.image(qrCodeBuffer, qrX, qrY, {
       width: this.qrCodeTargetSize,
       height: this.qrCodeTargetSize
     });
 
-    // Draw "kidsland" Text
     const kidslandY = qrY + this.qrCodeTargetSize + 2; 
     const kidslandX = qrX;
     const kidslandWidth = this.qrCodeTargetSize;
@@ -111,32 +107,48 @@ class LabelGenerator {
            align: 'center'
        });
 
-    // --- 2. Vertical Barcode Placement (Right Side, Rotated 180°) ---
-    const finalBarcodeWidth = this.barcodeTargetHeight; 
-    const barcodeFinalX = this.stickerWidth - finalBarcodeWidth - this.padding; 
-    
-    const finalBarcodeHeight = this.barcodeTargetWidth; 
-    const barcodeFinalY = (this.stickerHeight / 2) - (finalBarcodeHeight / 2); 
+    // --- 2. Barcode Bars & Numbers Placement (Right Side, Rotated 90°) ---
+    const finalBarcodeBarsWidth = this.barcodeTargetHeight; // 40pt
+    const finalBarcodeBarsHeight = this.barcodeTargetWidth; // 90pt
+    
+    // Add estimated space for the barcode number below the bars (post-rotation)
+    const totalBarcodeBlockHeight = finalBarcodeBarsHeight + this.barcodeNumberFontSize;
+    
+    // Barcode block position relative to the sticker edge
+    const barcodeBlockX = this.stickerWidth - finalBarcodeBarsWidth - this.padding; 
+    const barcodeBlockY = (this.stickerHeight / 2) - (totalBarcodeBlockHeight / 2); 
 
+    // --- Rotation Setup for both Bars and Numbers ---
     doc.save();
-    doc.translate(barcodeFinalX + finalBarcodeWidth, barcodeFinalY + finalBarcodeHeight)
-       .rotate(180, { origin: [0, 0] });
-    
-    // Draw image 
-    doc.image(barcodeBuffer, 0, 0, { 
-      width: this.barcodeTargetWidth, 
-      height: this.barcodeTargetHeight 
+    // Translate to the top-right of the final rotated area
+    doc.translate(barcodeBlockX + finalBarcodeBarsWidth, barcodeBlockY)
+       .rotate(90, { origin: [0, 0] }); 
+   
+    // A. Draw Barcode Bars Image (Original size 90x40)
+    doc.image(barcodeBuffer, 0, -this.barcodeTargetWidth, { 
+      width: this.barcodeTargetWidth, // 90
+      height: this.barcodeTargetHeight // 40
     });
+
+    // B. Draw Barcode Numbers (Rotated 90 degrees with the bars)
+    // Position: Below the bars image (original height is 40pt)
+    const numberTextY = -this.barcodeTargetWidth + this.barcodeTargetHeight + 2; // Below the image
+    const numberTextWidth = this.barcodeTargetWidth; // Align with the original barcode width
+    
+    doc.fontSize(this.barcodeNumberFontSize) 
+       .text(orderData.product_barcode || '1234567890123', 0, numberTextY, {
+           width: numberTextWidth,
+           align: 'center'
+       });
     
     doc.restore(); 
 
-    // --- 3. SKU Text Placement (Center area, Large and Rotated 90°) ---
+    // --- 3. SKU Text Placement (Center area, Rotated 90°) ---
+    // Calculate the available width between the QR block and the new barcode block
     const textX = qrX + this.qrCodeTargetSize + this.padding * 2; 
-    const textWidth = barcodeFinalX - textX - this.padding; 
+    const textWidth = barcodeBlockX - textX - this.padding; 
     const textLineHeight = this.skuTextFontSize * 1.2; 
-    const textTotalHeight = textLineHeight; 
-    const textY = (this.stickerHeight / 2) - (textTotalHeight / 2); 
-
+    
     doc.save();
     
     const textCenterX = textX + (textWidth / 2);
@@ -165,6 +177,7 @@ class LabelGenerator {
   }
 
   async createCompleteLabelPack(orderData, marketplaceLabel) {
+    // (Rest of the function remains the same)
     let marketplaceLabelBuffer;
     if (typeof marketplaceLabel === 'string') {
       marketplaceLabelBuffer = this.base64ToBuffer(marketplaceLabel);
