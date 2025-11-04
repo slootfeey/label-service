@@ -95,37 +95,108 @@ class LabelGenerator {
       doc.end();
     });
   }
-
-  async createStickerPage() {
-    const doc = new PDFDocument({
-      size: 'A4',
-      margins: { top: 20, bottom: 20, left: 20, right: 20 }
-    });
-
-    const buffers = [];
-    doc.on('data', buffers.push.bind(buffers));
-
-    return new Promise((resolve, reject) => {
-      doc.on('end', () => resolve(Buffer.concat(buffers)));
-      doc.on('error', reject);
-      doc.end();
-    });
+async createCompleteLabelPack(orderData, marketplaceLabel) {
+  // Handle marketplace label (decode if base64)
+  let marketplaceLabelBuffer;
+  if (typeof marketplaceLabel === 'string') {
+    marketplaceLabelBuffer = this.base64ToBuffer(marketplaceLabel);
+  } else if (Buffer.isBuffer(marketplaceLabel)) {
+    marketplaceLabelBuffer = marketplaceLabel;
+  } else {
+    throw new Error('Invalid marketplace label format');
   }
 
-  async createCompleteLabelPack(orderData, marketplaceLabel) {
-    // Generate product sticker
-    const stickerBuffer = await this.createProductSticker(orderData);
+  // Load marketplace PDF
+  const marketplacePdf = await PDFLibDocument.load(marketplaceLabelBuffer);
 
-    // Handle marketplace label (decode if base64)
-    let marketplaceLabelBuffer;
-    if (typeof marketplaceLabel === 'string') {
-      marketplaceLabelBuffer = this.base64ToBuffer(marketplaceLabel);
-    } else if (Buffer.isBuffer(marketplaceLabel)) {
-      marketplaceLabelBuffer = marketplaceLabel;
-    } else {
-      throw new Error('Invalid marketplace label format');
-    }
+  // Generate product sticker as a complete PDF page with two stickers
+  const stickersPdf = await this.createStickersPagePdf(orderData);
 
+  // Create final merged PDF
+  const mergedPdf = await PDFLibDocument.create();
+
+  // Copy all pages from marketplace PDF
+  const marketplacePages = await mergedPdf.copyPages(marketplacePdf, marketplacePdf.getPageIndices());
+  marketplacePages.forEach((page) => mergedPdf.addPage(page));
+
+  // Copy stickers page
+  const stickerPages = await mergedPdf.copyPages(stickersPdf, [0]);
+  stickerPages.forEach((page) => mergedPdf.addPage(page));
+
+  // Save and return
+  const mergedPdfBytes = await mergedPdf.save();
+  return Buffer.from(mergedPdfBytes);
+}
+
+async createStickersPagePdf(orderData) {
+  // Create PDF with two stickers using PDFKit
+  const doc = new PDFDocument({
+    size: 'A4',
+    margins: { top: 20, bottom: 20, left: 20, right: 20 }
+  });
+
+  const buffers = [];
+  doc.on('data', buffers.push.bind(buffers));
+
+  const barcodeBuffer = await this.generateBarcode(orderData.product_barcode);
+  const qrCodeBuffer = await this.generateQRCode(orderData.order_id);
+
+  const margin = 20;
+  const spacing = 10;
+  const padding = 5;
+  const contentWidth = this.stickerWidth - (padding * 2);
+  const qrSize = 35;
+  const barcodeX = padding + qrSize + 5;
+  const barcodeWidth = contentWidth - qrSize - 5;
+
+  // First sticker
+  let currentY = margin;
+  
+  doc.image(qrCodeBuffer, margin + padding, currentY + padding, {
+    width: qrSize,
+    height: qrSize
+  });
+
+  doc.image(barcodeBuffer, margin + barcodeX, currentY + padding + 5, {
+    width: barcodeWidth,
+    height: 25
+  });
+
+  doc.fontSize(7)
+     .text(orderData.product_code || '', margin + barcodeX, currentY + padding + 32, {
+       width: barcodeWidth,
+       align: 'center'
+     });
+
+  // Second sticker (next to first)
+  const secondStickerX = margin + this.stickerWidth + spacing;
+  
+  doc.image(qrCodeBuffer, secondStickerX + padding, currentY + padding, {
+    width: qrSize,
+    height: qrSize
+  });
+
+  doc.image(barcodeBuffer, secondStickerX + barcodeX, currentY + padding + 5, {
+    width: barcodeWidth,
+    height: 25
+  });
+
+  doc.fontSize(7)
+     .text(orderData.product_code || '', secondStickerX + barcodeX, currentY + padding + 32, {
+       width: barcodeWidth,
+       align: 'center'
+     });
+
+  return new Promise((resolve, reject) => {
+    doc.on('end', async () => {
+      const pdfBuffer = Buffer.concat(buffers);
+      const pdfDoc = await PDFLibDocument.load(pdfBuffer);
+      resolve(pdfDoc);
+    });
+    doc.on('error', reject);
+    doc.end();
+  });
+}
     // Load marketplace PDF
     const marketplacePdf = await PDFLibDocument.load(marketplaceLabelBuffer);
 
