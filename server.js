@@ -37,12 +37,13 @@ class LabelGenerator {
             barcodeData = "1234567890128"; // Default EAN-13 test value
         }
         
-        const canvas = createCanvas(400, 100); 
+        // 💥 FIX: Increased canvas size for higher resolution
+        const canvas = createCanvas(1000, 300); 
       
         JsBarcode(canvas, barcodeData, {
             format: "EAN13", 
             width: 2,
-            height: 60, 
+            height: 200, // 💥 FIX: Increased bar height
             displayValue: false, 
             margin: 5
         });
@@ -59,7 +60,7 @@ class LabelGenerator {
             sku: data.product_barcode
         });
 
-        const qrPixelWidth = 200; 
+        const qrPixelWidth = 400; // 💥 FIX: Increased pixel size for higher resolution
         const qrBuffer = await QRCode.toBuffer(qrDataString, {
           errorCorrectionLevel: 'M',
           type: 'png',
@@ -115,8 +116,8 @@ class LabelGenerator {
     
     // 1. Define dimensions for the right column block
     const skuTextHeight = this.skuTextFontSize * 1.2; 
-    const gap1 = 4; // Gap between SKU and Barcode bars
-    const gap2 = 2; // Gap between Barcode bars and Numbers
+    const gap1 = 4; 
+    const gap2 = 2; 
     const numberTextHeight = this.barcodeNumberFontSize * 1.2;
 
     // Total vertical space needed for the right side elements
@@ -161,8 +162,6 @@ class LabelGenerator {
            align: 'center' 
        });
     
-    // This entire block replaces the previous complex rotation logic
-      
     return new Promise((resolve, reject) => {
       doc.on('end', async () => {
         const pdfBuffer = Buffer.concat(buffers);
