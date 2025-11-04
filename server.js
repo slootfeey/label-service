@@ -28,21 +28,40 @@ class LabelGenerator {
   }
 
   async generateBarcode(data) {
-    try {
-      const canvas = createCanvas(400, 100); 
-      
-      JsBarcode(canvas, data, {
-        format: "EAN13", 
-        width: 2,
-        height: 60, 
-        displayValue: false, // HIDE NUMBERS IN IMAGE - We draw them separately
-        margin: 5
-      });
-      return canvas.toBuffer('image/png');
-    } catch (err) {
-      throw new Error(`Barcode generation failed: ${err.message}`);
-    }
-  }
+  try {
+    console.log('Input barcode data:', data);
+    
+    let barcodeData = data.replace(/\D/g, '');
+    console.log('Cleaned barcode:', barcodeData);
+    
+    if (barcodeData.length < 12) {
+      barcodeData = barcodeData.padStart(12, '0');
+    } else if (barcodeData.length >= 12) {
+      barcodeData = barcodeData.substring(0, 12);
+    }
+    
+    barcodeData = this.calculateEAN13Checksum(barcodeData);
+    console.log('Final EAN13 with checksum:', barcodeData);
+    
+    const canvas = createCanvas(400, 150);
+    
+    JsBarcode(canvas, barcodeData, {
+      format: "EAN13",
+      width: 2,
+      height: 80,
+      displayValue: true,  // Changed to true to see numbers
+      fontSize: 14,
+      margin: 10
+    });
+    
+    const buffer = canvas.toBuffer('image/png');
+    console.log('Barcode buffer size:', buffer.length);
+    return buffer;
+  } catch (err) {
+    console.error('Barcode generation error:', err);
+    throw new Error(`Barcode generation failed: ${err.message}`);
+  }
+}
     
   async generateQRCode(data) {
     try {
