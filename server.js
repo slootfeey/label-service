@@ -18,7 +18,7 @@ class LabelGenerator {
     this.stickerHeight = 40 * 2.83465; // ~113.38 points
     
     // Define target dimensions for the codes in points for consistent placement
-    this.qrCodeTargetSize = 40; // Smaller QR size in points (~14.1 mm)
+    this.qrCodeTargetSize = 25; // Smaller QR size in points (~14.1 mm)
     this.barcodeTargetWidth = 80; // Barcode width in points
     this.barcodeTargetHeight = 25; // Barcode height in points (reduced for better fit)
     this.textFontSize = 10; // Font size for the SKU/Product code
@@ -30,7 +30,7 @@ class LabelGenerator {
       // Adjust canvas size to accommodate the barcode image generation
       const canvas = createCanvas(300, 100); 
       JsBarcode(canvas, data, {
-        format: "CODE128",
+        format: "EAN13",
         width: 2,
         height: 60,
         displayValue: true,
