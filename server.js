@@ -81,15 +81,18 @@ class LabelGenerator {
     const kidslandTextHeight = 10; 
     const totalLeftBlockHeight = this.qrCodeTargetSize + this.padding + kidslandTextHeight;
     
-    const qrX = this.padding;
-    const qrY = (this.stickerHeight / 2) - (totalLeftBlockHeight / 2);
-    
-    doc.image(qrCodeBuffer, qrX, qrY, {
-      width: this.qrCodeTargetSize,
-      height: this.qrCodeTargetSize
-    });
+    // Center QR block vertically on the entire sticker height
+const qrX = this.padding;
+const totalLeftBlockHeight = this.qrCodeTargetSize + this.padding + kidslandTextHeight;
+const qrY = (this.stickerHeight / 2) - (this.qrCodeTargetSize / 2);  // Center just the QR
 
-    const kidslandY = qrY + this.qrCodeTargetSize + 2; 
+doc.image(qrCodeBuffer, qrX, qrY, {
+  width: this.qrCodeTargetSize,
+  height: this.qrCodeTargetSize
+});
+
+// Kidsland text stays below QR
+const kidslandY = qrY + this.qrCodeTargetSize + 2;
     const kidslandX = qrX;
     const kidslandWidth = this.qrCodeTargetSize;
 
@@ -106,10 +109,10 @@ class LabelGenerator {
     const barcodeFinalY = (this.stickerHeight / 2) - (finalBarcodeHeight / 2);
 
     doc.save();
-doc.translate(barcodeFinalX + finalBarcodeWidth, barcodeFinalY)
-   .rotate(90, { origin: [0, 0] });  // Changed from 180 to 90
+doc.translate(barcodeFinalX + finalBarcodeWidth, barcodeFinalY + finalBarcodeHeight)
+   .rotate(180, { origin: [0, 0] });  // Back to 180°
 
-doc.image(barcodeBuffer, 0, -this.barcodeTargetWidth, {  // Changed Y position
+doc.image(barcodeBuffer, 0, 0, {  // Back to 0, 0
   width: this.barcodeTargetWidth,
   height: this.barcodeTargetHeight
 });
