@@ -14,20 +14,19 @@ app.use(express.json({ limit: '50mb' }));
 class LabelGenerator {
   constructor() {
     // 1. Set sticker size to 58x40 mm (using ~2.83465 points per mm for PDFKit)
-    this.stickerWidth = 58 * 2.83465; // ~164.5 points
+    this.stickerWidth = 58 * 2.83465; // ~164.41 points
     this.stickerHeight = 40 * 2.83465; // ~113.38 points
     
-    // Define target dimensions for the codes in points for consistent placement
-    this.qrCodeTargetSize = 30; // Smaller QR size in points (~14.1 mm)
-    this.barcodeTargetWidth = 80; // Barcode width in points
-    this.barcodeTargetHeight = 25; // Barcode height in points (reduced for better fit)
-    this.textFontSize = 10; // Font size for the SKU/Product code
-    this.verticalSpacing = 5; // Spacing between elements
+    // Define target dimensions for the codes in points
+    this.qrCodeTargetSize = 50; 
+    this.barcodeTargetWidth = 80; 
+    this.barcodeTargetHeight = 35; 
+    this.textFontSize = 10;
+    this.padding = 5; 
   }
 
   async generateBarcode(data) {
     try {
-      // Adjust canvas size to accommodate the barcode image generation
       const canvas = createCanvas(300, 100); 
       JsBarcode(canvas, data, {
         format: "EAN13",
@@ -45,8 +44,7 @@ class LabelGenerator {
 
   async generateQRCode(data) {
     try {
-      // Make generated image smaller for better scaling control
-      const qrPixelWidth = 100; 
+      const qrPixelWidth = 120; 
       const qrBuffer = await QRCode.toBuffer(data, {
         errorCorrectionLevel: 'M',
         type: 'png',
@@ -66,7 +64,6 @@ class LabelGenerator {
 
   async createStickersPagePdf(orderData) {
     const doc = new PDFDocument({
-      // Set size to 58x40 points
       size: [this.stickerWidth, this.stickerHeight], 
       margins: { top: 0, bottom: 0, left: 0, right: 0 }
     });
@@ -77,57 +74,69 @@ class LabelGenerator {
     const barcodeBuffer = await this.generateBarcode(orderData.product_barcode);
     const qrCodeBuffer = await this.generateQRCode(orderData.order_id);
 
-    // --- Positioning Logic for Right Half Center ---
-    const rightHalfStart = this.stickerWidth / 2; // Midpoint X
+    // --- 1. QR Code Placement (Left side, vertically centered) ---
+    const qrX = this.padding;
+    // Center QR/Text block vertically. The text is placed below the QR now.
+    // Recalculate QR Y to account for the text "kidsland" below it
+    const kidslandTextHeight = 8; // Estimated height for the small text
+    const totalLeftBlockHeight = this.qrCodeTargetSize + this.padding + kidslandTextHeight;
 
-    // Calculate vertical center point of the right half
-    const centerLineY = this.stickerHeight / 2;
-
-    // Calculate the total vertical space needed for QR + Barcode + Spacing
-    const totalCodesHeight = this.qrCodeTargetSize + this.barcodeTargetHeight + this.verticalSpacing;
-
-    // Calculate the starting Y for the QR code to center the whole stack
-    const qrY = centerLineY - (totalCodesHeight / 2);
-
-    // Calculate the X for QR code to center it in the right half
-    // Right half center X = rightHalfStart + (rightHalfWidth / 2)
-    const qrX = rightHalfStart + (this.stickerWidth / 4) - (this.qrCodeTargetSize / 2);
-
-    // 2. Draw QR Code
+    const qrY = (this.stickerHeight / 2) - (totalLeftBlockHeight / 2);
+    
     doc.image(qrCodeBuffer, qrX, qrY, {
       width: this.qrCodeTargetSize,
       height: this.qrCodeTargetSize
     });
 
-    // Calculate Barcode Y (below QR)
-    const barcodeY = qrY + this.qrCodeTargetSize + this.verticalSpacing;
-    
-    // Calculate Barcode X to center it in the right half
-    const barcodeX = rightHalfStart + (this.stickerWidth / 4) - (this.barcodeTargetWidth / 2);
+    // --- 4. "kidsland" Text Placement (Bottom left, centered under QR) ---
+    // Y: Below the QR code with some padding
+    const kidslandY = qrY + this.qrCodeTargetSize + 2; 
+    // X: Centered under the QR code
+    const kidslandX = qrX;
+    const kidslandWidth = this.qrCodeTargetSize;
+
+    doc.fontSize(6)
+       .text('kidsland', kidslandX, kidslandY, {
+           width: kidslandWidth,
+           align: 'center'
+       });
+
+
+    // --- 2. Barcode Placement (Right side, rotated 90 degrees, vertically centered) ---
+    const finalBarcodeWidth = this.barcodeTargetHeight; // 35pt
+    const barcodeFinalX = this.stickerWidth - finalBarcodeWidth - this.padding; 
+    const finalBarcodeHeight = this.barcodeTargetWidth; // 80pt
+    const barcodeFinalY = (this.stickerHeight / 2) - (finalBarcodeHeight / 2);
+
+    doc.save();
+    doc.translate(barcodeFinalX, barcodeFinalY)
+       .rotate(90, { origin: [0, 0] });
     
-    // 2. Draw Barcode
-    // NOTE: Removed rotation/translate from original code for standard horizontal placement
-    doc.image(barcodeBuffer, barcodeX, barcodeY, {
-      width: this.barcodeTargetWidth,
-      height: this.barcodeTargetHeight
+    // Image drawing adjusted for rotation
+    doc.image(barcodeBuffer, 0, -finalBarcodeWidth, {
+      width: this.barcodeTargetWidth, 
+      height: this.barcodeTargetHeight 
     });
-    
-    // --- Text Placement (Centered in the Left Half) ---
-    const textWidth = this.stickerWidth / 2; // Constrain to left half
-    const textHeight = 15;
-    const textY = (this.stickerHeight / 2) - (textHeight / 2); // Center vertically
+    
+    doc.restore(); 
+
+    // --- 3. Product Code/Data Text Placement (Center area, centered vertically) ---
+    const textX = qrX + this.qrCodeTargetSize + this.padding; 
+    const textWidth = barcodeFinalX - textX - this.padding; 
+    const textLineHeight = this.textFontSize * 1.2; 
+    const textTotalHeight = textLineHeight * 2; 
+    const textY = (this.stickerHeight / 2) - (textTotalHeight / 2); 
 
     doc.fontSize(this.textFontSize)
-       .text(orderData.product_code || 'SKU-TEST-001', 0, textY, {
+       .text(orderData.product_code || 'Product data\ntwo lines', textX, textY, { 
          width: textWidth,
          align: 'center'
        });
-
+      
     return new Promise((resolve, reject) => {
       doc.on('end', async () => {
         const pdfBuffer = Buffer.concat(buffers);
-        // The original code loads the PDF buffer into pdf-lib here
-        const pdfDoc = await PDFLibDocument.load(pdfBuffer); 
+        const pdfDoc = await PDFLibDocument.load(pdfBuffer);
         resolve(pdfDoc);
       });
       doc.on('error', reject);
@@ -166,7 +175,7 @@ class LabelGenerator {
 
 const generator = new LabelGenerator();
 
-// --- Express Routes ---
+// --- Express Routes (Unchanged) ---
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'label-generator' });
