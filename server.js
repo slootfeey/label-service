@@ -76,14 +76,12 @@ class LabelGenerator {
     doc.on('data', buffers.push.bind(buffers));
 
     const barcodeBuffer = await this.generateBarcode(orderData.product_barcode);
-    const qrCodeBuffer = await this.generateQRCode(orderData); 
+const qrCodeBuffer = await this.generateQRCode(orderData);
 
-    const kidslandTextHeight = 10; 
-    const totalLeftBlockHeight = this.qrCodeTargetSize + this.padding + kidslandTextHeight;
-    
-    // Center QR block vertically on the entire sticker height
+const kidslandTextHeight = 10;
+
+// Center QR block vertically on the entire sticker height
 const qrX = this.padding;
-const totalLeftBlockHeight = this.qrCodeTargetSize + this.padding + kidslandTextHeight;
 const qrY = (this.stickerHeight / 2) - (this.qrCodeTargetSize / 2);  // Center just the QR
 
 doc.image(qrCodeBuffer, qrX, qrY, {
@@ -93,15 +91,14 @@ doc.image(qrCodeBuffer, qrX, qrY, {
 
 // Kidsland text stays below QR
 const kidslandY = qrY + this.qrCodeTargetSize + 2;
-    const kidslandX = qrX;
-    const kidslandWidth = this.qrCodeTargetSize;
+const kidslandX = qrX;
+const kidslandWidth = this.qrCodeTargetSize;
 
-    doc.fontSize(this.kidslandFontSize)
-       .text('kidsland', kidslandX, kidslandY, {
-         width: kidslandWidth,
-         align: 'center'
-       });
-
+doc.fontSize(this.kidslandFontSize)
+   .text('kidsland', kidslandX, kidslandY, {
+     width: kidslandWidth,
+     align: 'center'
+   });
     const finalBarcodeWidth = this.barcodeTargetHeight;
     const barcodeFinalX = this.stickerWidth - finalBarcodeWidth - this.padding; 
     
