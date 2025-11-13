@@ -30,13 +30,14 @@ class LabelGenerator {
 
   async generateBarcode(data) {
     try {
-        // Validate and clean the data before feeding it to JsBarcode
         let barcodeData = String(data || '').replace(/\s/g, '');
         
-        // Validation for EAN13 (must be 12 or 13 digits)
-        if (barcodeData.length < 12 || barcodeData.length > 13 || !/^\d+$/.test(barcodeData)) {
-            console.warn(`Invalid EAN-13 data: "${data}". Using default test barcode.`);
-            barcodeData = "1234567890128"; // Default EAN-13 test value
+        // FIX: Ensure EAN-13 input is 12 digits so JsBarcode calculates the correct checksum.
+        if (barcodeData.length === 13 && /^\d+$/.test(barcodeData)) {
+            barcodeData = barcodeData.substring(0, 12);
+        } else if (barcodeData.length < 12 || barcodeData.length > 13 || !/^\d+$/.test(barcodeData)) {
+            console.warn(`Invalid EAN-13 data: "${data}". Using default 12-digit test barcode.`);
+            barcodeData = "123456789012"; 
         }
         
         const canvas = createCanvas(1000, 300); 
@@ -56,7 +57,7 @@ class LabelGenerator {
     
   async generateQRCode(data) {
     try {
-        // Encoding only the raw product_barcode string as requested
+        // Encoding only the raw product_barcode string
         const productBarcode = data.product_barcode || '2000000099064';
         const qrDataString = productBarcode; 
 
@@ -78,7 +79,7 @@ class LabelGenerator {
     return Buffer.from(base64Data, 'base64');
   }
 
-  async createStickersPagePdf(productData) { // Renamed parameter for clarity
+  async createStickersPagePdf(productData) { 
     const doc = new PDFDocument({
       size: [this.stickerWidth, this.stickerHeight], 
       margins: { top: 0, bottom: 0, left: 0, right: 0 }
@@ -124,15 +125,13 @@ class LabelGenerator {
     const rightBlockHeight = skuTextHeight + gap1 + this.barcodeTargetHeight + gap2 + numberTextHeight; 
     
     // 2. Define X positions
-    // Starting X position for the right column, relative to the left QR block
     const rightBlockX = qrX + this.qrCodeTargetSize + this.padding; 
     const rightBlockWidth = this.stickerWidth - rightBlockX - this.barcodePadding; 
     
     // 3. Define Y positions
-    // Top Y position of the entire right column block (centered vertically on sticker)
     const rightBlockY = (this.stickerHeight / 2) - (rightBlockHeight / 2); 
 
-    // A. SKU Text (Top of the right column)
+    // A. SKU Text
     const skuTextY = rightBlockY;
     
     doc.fontSize(this.skuTextFontSize)
@@ -144,7 +143,6 @@ class LabelGenerator {
     // B. Barcode Bars Image
     const barcodeY = skuTextY + skuTextHeight + gap1;
     
-    // Calculate X to center the 90pt wide barcode within the rightBlockWidth
     const barcodeX = rightBlockX + (rightBlockWidth / 2) - (this.barcodeTargetWidth / 2);
 
     doc.image(barcodeBuffer, barcodeX, barcodeY, { 
@@ -154,10 +152,14 @@ class LabelGenerator {
 
     // C. Barcode Numbers
     const numberTextY = barcodeY + this.barcodeTargetHeight + gap2;
+    
+    // Display the original 13-digit code on the label (if provided), or the 13-digit default
+    const displayedBarcode = productData.product_barcode && productData.product_barcode.length >= 12 && /^\d+$/.test(productData.product_barcode) 
+        ? productData.product_barcode 
+        : '1234567890128'; 
     
-    // Re-use barcodeX and width for easy centering of the numbers below the bars
     doc.fontSize(this.barcodeNumberFontSize) 
-       .text(productData.product_barcode || '1234567890128', barcodeX, numberTextY, {
+       .text(displayedBarcode, barcodeX, numberTextY, {
            width: this.barcodeTargetWidth, 
            align: 'center' 
        });
@@ -165,6 +167,7 @@ class LabelGenerator {
     return new Promise((resolve, reject) => {
       doc.on('end', async () => {
         const pdfBuffer = Buffer.concat(buffers);
+        // Return the PDFLibDocument ready for merging
         const pdfDoc = await PDFLibDocument.load(pdfBuffer);
         resolve(pdfDoc);
       });
@@ -190,37 +193,42 @@ class LabelGenerator {
     const marketplacePages = await mergedPdf.copyPages(marketplacePdf, marketplacePdf.getPageIndices());
     marketplacePages.forEach((page) => mergedPdf.addPage(page));
 
-    // 2. Iterate through all products and generate stickers
-    if (orderData.products && Array.isArray(orderData.products)) {
-        for (const product of orderData.products) {
-            // Merge order_id with product details for use in createStickersPagePdf
-            const productData = {
-                order_id: orderData.order_id,
-                product_barcode: product.product_barcode,
-                product_code: product.product_code,
-                // Default to 2 stickers if quantity is not provided
-                quantity: product.quantity && product.quantity > 0 ? product.quantity : 2 
-            }; 
-
-            for (let i = 0; i < productData.quantity; i++) {
-                // Generate a new PDF object for each sticker to prevent rendering issues
-                const stickerPdf = await this.createStickersPagePdf(productData);
-                const stickerPages = await mergedPdf.copyPages(stickerPdf, [0]);
-                stickerPages.forEach((page) => mergedPdf.addPage(page));
-            }
-        }
-    } else {
-        // Fallback for previous single-product structure, generating 2 stickers
+    // 2. STAGE 1: Collect all individual sticker PDFs (PDFLibDocument objects)
+    const allStickerPdfs = []; 
+    
+    // Determine the product data array to process
+    let productsToProcess = [];
+    if (orderData.products && Array.isArray(orderData.products) && orderData.products.length > 0) {
+        productsToProcess = orderData.products;
+    } else if (orderData.product_barcode) {
+        // Fallback for previous single-product structure
+        productsToProcess = [{
+            product_barcode: orderData.product_barcode,
+            product_code: orderData.product_code,
+            quantity: 2 // Default to 2 stickers for the fallback
+        }];
+    }
+    
+    for (const product of productsToProcess) {
         const productData = {
             order_id: orderData.order_id,
-            product_barcode: orderData.product_barcode,
-            product_code: orderData.product_code
-        };
-        for (let i = 0; i < 2; i++) {
-            const stickerPdf = await this.createStickersPagePdf(productData);
-            const stickerPages = await mergedPdf.copyPages(stickerPdf, [0]);
-            stickerPages.forEach((page) => mergedPdf.addPage(page));
+            product_barcode: product.product_barcode,
+            product_code: product.product_code,
+            // Default to 2 stickers if quantity is not provided
+            quantity: product.quantity && product.quantity > 0 ? product.quantity : 2 
+        }; 
+
+        for (let i = 0; i < productData.quantity; i++) {
+            // Generate the fresh sticker document and collect it
+            allStickerPdfs.push(await this.createStickersPagePdf(productData));
         }
+    }
+
+
+    // 3. STAGE 2: Merge all collected sticker PDFs sequentially
+    for (const stickerPdf of allStickerPdfs) {
+        const stickerPages = await mergedPdf.copyPages(stickerPdf, [0]);
+        stickerPages.forEach((page) => mergedPdf.addPage(page));
     }
 
     const mergedPdfBytes = await mergedPdf.save();
@@ -230,7 +238,7 @@ class LabelGenerator {
 
 const generator = new LabelGenerator();
 
-// --- Express Routes (Modified for product array validation) ---
+// --- Express Routes (Unchanged) ---
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'label-generator' });
@@ -247,13 +255,10 @@ app.post('/generate-label', async (req, res) => {
     }
 
     // Validation for multi-product structure
-    if (!orderData.order_id || !orderData.products || !Array.isArray(orderData.products) || orderData.products.length === 0) {
-        // Fallback for old structure or basic validation
-        if (!orderData.product_barcode) {
-             return res.status(400).json({ 
-                error: 'orderData must include order_id and either a "products" array or a single "product_barcode" for fallback.' 
-             });
-        }
+    if (!orderData.order_id || (!orderData.products && !orderData.product_barcode)) {
+         return res.status(400).json({ 
+            error: 'orderData must include order_id and either a "products" array or a single "product_barcode" for fallback.' 
+         });
     }
 
     console.log('Generating label for order:', orderData.order_id);
@@ -285,12 +290,10 @@ app.post('/generate-from-order', async (req, res) => {
       });
     }
 
-    if (!orderData.order_id || !orderData.products || !Array.isArray(orderData.products) || orderData.products.length === 0) {
-        if (!orderData.product_barcode) {
-             return res.status(400).json({ 
-                error: 'orderData must include order_id and either a "products" array or a single "product_barcode" for fallback.' 
-             });
-        }
+    if (!orderData.order_id || (!orderData.products && !orderData.product_barcode)) {
+         return res.status(400).json({ 
+            error: 'orderData must include order_id and either a "products" array or a single "product_barcode" for fallback.' 
+         });
     }
 
     console.log('Fetching marketplace label from:', marketplaceLabelUrl);
