@@ -13,14 +13,14 @@ app.use(express.json({ limit: '50mb' }));
 
 class LabelGenerator {
   constructor() {
-    // Sticker size 58x40 mm (using ~2.83465 points per mm for PDFKit)
+    // Sticker size 58x40 mm
     this.stickerWidth = 58 * 2.83465; // ~164.41 points
     this.stickerHeight = 40 * 2.83465; // ~113.38 points
     
     // Defined sizes
     this.qrCodeTargetSize = 65;         
-    this.barcodeTargetWidth = 90;       // Bar width (horizontal)
-    this.barcodeTargetHeight = 35;      // Bar height (vertical)
+    this.barcodeTargetWidth = 90;       
+    this.barcodeTargetHeight = 35;      
     this.barcodeNumberFontSize = 8;     
     this.skuTextFontSize = 9;           
     this.kidslandFontSize = 7;          
@@ -31,8 +31,6 @@ class LabelGenerator {
   async generateBarcode(data) {
     try {
         let barcodeData = String(data || '').replace(/\s/g, '');
-        
-        // FIX: Ensure EAN-13 input is 12 digits so JsBarcode calculates the correct checksum.
         if (barcodeData.length === 13 && /^\d+$/.test(barcodeData)) {
             barcodeData = barcodeData.substring(0, 12);
         } else if (barcodeData.length < 12 || barcodeData.length > 13 || !/^\d+$/.test(barcodeData)) {
@@ -41,34 +39,21 @@ class LabelGenerator {
         }
         
         const canvas = createCanvas(1000, 300); 
-      
         JsBarcode(canvas, barcodeData, {
-            format: "EAN13", 
-            width: 2,
-            height: 200, 
-            displayValue: false, 
-            margin: 5
+            format: "EAN13", width: 2, height: 200, displayValue: false, margin: 5
         });
         return canvas.toBuffer('image/png');
     } catch (err) {
-        throw new Error(`Barcode generation failed: ${err.message || 'Unknown error during JsBarcode call.'}`);
+        throw new Error(`Barcode generation failed: ${err.message}`);
     }
   }
     
   async generateQRCode(data) {
     try {
-        // Encoding only the raw product_barcode string
         const productBarcode = data.product_barcode || '2000000099064';
-        const qrDataString = productBarcode; 
-
-        const qrPixelWidth = 400; 
-        const qrBuffer = await QRCode.toBuffer(qrDataString, {
-          errorCorrectionLevel: 'M',
-          type: 'png',
-          width: qrPixelWidth,
-          margin: 1
+        return await QRCode.toBuffer(productBarcode, {
+          errorCorrectionLevel: 'M', type: 'png', width: 400, margin: 1
         });
-        return qrBuffer;
     } catch (err) {
         throw new Error(`QR code generation failed: ${err.message}`);
     }
@@ -79,7 +64,8 @@ class LabelGenerator {
     return Buffer.from(base64Data, 'base64');
   }
 
-  async createStickersPagePdf(productData) { 
+  // --- UPDATED METHOD: Accepts marketplace parameter ---
+  async createStickersPagePdf(productData, marketplace = '') { 
     const doc = new PDFDocument({
       size: [this.stickerWidth, this.stickerHeight], 
       margins: { top: 0, bottom: 0, left: 0, right: 0 }
@@ -88,86 +74,114 @@ class LabelGenerator {
     const buffers = [];
     doc.on('data', buffers.push.bind(buffers));
 
-    const barcodeBuffer = await this.generateBarcode(productData.product_barcode);
-    const qrCodeBuffer = await this.generateQRCode(productData); 
+    // Normalize marketplace string
+    const target = marketplace.toLowerCase().trim();
 
-    // --- 1. QR Code & "kidsland" Block Placement (Left Side) ---
-    const kidslandTextHeight = 10; 
-    const totalLeftBlockHeight = this.qrCodeTargetSize + this.padding + kidslandTextHeight;
-    
-    const qrX = this.padding;
-    const qrY = (this.stickerHeight / 2) - (totalLeftBlockHeight / 2);
-     
-    doc.image(qrCodeBuffer, qrX, qrY, {
-      width: this.qrCodeTargetSize,
-      height: this.qrCodeTargetSize
-    });
+    // 1. UZUM LOGIC (QR Code ONLY)
+    if (target === 'uzum') {
+        const qrCodeBuffer = await this.generateQRCode(productData); 
+        
+        // Calculate vertical centering for QR + Text
+        const kidslandTextHeight = 10;
+        const totalHeight = this.qrCodeTargetSize + 2 + kidslandTextHeight;
+        const startY = (this.stickerHeight - totalHeight) / 2;
+        
+        // Center Horizontally
+        const qrX = (this.stickerWidth - this.qrCodeTargetSize) / 2;
 
-    const kidslandY = qrY + this.qrCodeTargetSize + 2; 
-    const kidslandX = qrX;
-    const kidslandWidth = this.qrCodeTargetSize;
+        doc.image(qrCodeBuffer, qrX, startY, {
+            width: this.qrCodeTargetSize,
+            height: this.qrCodeTargetSize
+        });
 
-    doc.fontSize(this.kidslandFontSize)
-       .text('kidsland', kidslandX, kidslandY, {
-           width: kidslandWidth,
-           align: 'center'
-       });
+        doc.fontSize(this.kidslandFontSize)
+           .text('kidsland', qrX, startY + this.qrCodeTargetSize + 2, {
+               width: this.qrCodeTargetSize,
+               align: 'center'
+           });
 
-    // --- 2. SKU Text & Barcode Placement (Right Side, Horizontal) ---
-    
-    // 1. Define dimensions for the right column block
-    const skuTextHeight = this.skuTextFontSize * 1.2; 
-    const gap1 = 4; 
-    const gap2 = 2; 
-    const numberTextHeight = this.barcodeNumberFontSize * 1.2;
+    // 2. YANDEX LOGIC (Barcode ONLY)
+    } else if (target === 'yandex') {
+        const barcodeBuffer = await this.generateBarcode(productData.product_barcode);
 
-    // Total vertical space needed for the right side elements
-    const rightBlockHeight = skuTextHeight + gap1 + this.barcodeTargetHeight + gap2 + numberTextHeight; 
-    
-    // 2. Define X positions
-    const rightBlockX = qrX + this.qrCodeTargetSize + this.padding; 
-    const rightBlockWidth = this.stickerWidth - rightBlockX - this.barcodePadding; 
-    
-    // 3. Define Y positions
-    const rightBlockY = (this.stickerHeight / 2) - (rightBlockHeight / 2); 
+        const skuTextHeight = this.skuTextFontSize * 1.2; 
+        const numberTextHeight = this.barcodeNumberFontSize * 1.2;
+        const gap1 = 4;
+        const gap2 = 2;
 
-    // A. SKU Text
-    const skuTextY = rightBlockY;
-    
-    doc.fontSize(this.skuTextFontSize)
-       .text(productData.product_code || 'SKU-TEST-001', rightBlockX, skuTextY, { 
-         width: rightBlockWidth,
-         align: 'center'
-       });
+        // Total vertical space needed
+        const totalHeight = skuTextHeight + gap1 + this.barcodeTargetHeight + gap2 + numberTextHeight;
+        const startY = (this.stickerHeight - totalHeight) / 2;
 
-    // B. Barcode Bars Image
-    const barcodeY = skuTextY + skuTextHeight + gap1;
-    
-    const barcodeX = rightBlockX + (rightBlockWidth / 2) - (this.barcodeTargetWidth / 2);
+        // Center Horizontally
+        const centerX = 0; // Use full width for alignment
+        const contentWidth = this.stickerWidth;
 
-    doc.image(barcodeBuffer, barcodeX, barcodeY, { 
-      width: this.barcodeTargetWidth, // 90
-      height: this.barcodeTargetHeight // 35
-    });
+        // A. SKU Text
+        doc.fontSize(this.skuTextFontSize)
+           .text(productData.product_code || 'SKU-TEST', centerX, startY, { 
+             width: contentWidth, align: 'center'
+           });
 
-    // C. Barcode Numbers
-    const numberTextY = barcodeY + this.barcodeTargetHeight + gap2;
-    
-    // Display the original 13-digit code on the label (if provided), or the 13-digit default
-    const displayedBarcode = productData.product_barcode && productData.product_barcode.length >= 12 && /^\d+$/.test(productData.product_barcode) 
-        ? productData.product_barcode 
-        : '1234567890128'; 
-    
-    doc.fontSize(this.barcodeNumberFontSize) 
-       .text(displayedBarcode, barcodeX, numberTextY, {
-           width: this.barcodeTargetWidth, 
-           align: 'center' 
-       });
+        // B. Barcode Image
+        const barcodeImgX = (this.stickerWidth - this.barcodeTargetWidth) / 2;
+        const barcodeY = startY + skuTextHeight + gap1;
+
+        doc.image(barcodeBuffer, barcodeImgX, barcodeY, { 
+          width: this.barcodeTargetWidth,
+          height: this.barcodeTargetHeight
+        });
+
+        // C. Barcode Numbers
+        const displayedBarcode = productData.product_barcode && productData.product_barcode.length >= 12 
+            ? productData.product_barcode : '1234567890128';
+        
+        doc.fontSize(this.barcodeNumberFontSize) 
+           .text(displayedBarcode, centerX, barcodeY + this.barcodeTargetHeight + gap2, {
+               width: contentWidth, align: 'center' 
+           });
+
+    // 3. DEFAULT LOGIC (Original Dual Layout)
+    } else {
+        const barcodeBuffer = await this.generateBarcode(productData.product_barcode);
+        const qrCodeBuffer = await this.generateQRCode(productData); 
+
+        // -- Left Side (QR) --
+        const kidslandTextHeight = 10; 
+        const totalLeftBlockHeight = this.qrCodeTargetSize + this.padding + kidslandTextHeight;
+        const qrX = this.padding;
+        const qrY = (this.stickerHeight / 2) - (totalLeftBlockHeight / 2);
+         
+        doc.image(qrCodeBuffer, qrX, qrY, { width: this.qrCodeTargetSize, height: this.qrCodeTargetSize });
+        doc.fontSize(this.kidslandFontSize)
+           .text('kidsland', qrX, qrY + this.qrCodeTargetSize + 2, { width: this.qrCodeTargetSize, align: 'center' });
+
+        // -- Right Side (Barcode) --
+        const rightBlockX = qrX + this.qrCodeTargetSize + this.padding; 
+        const rightBlockWidth = this.stickerWidth - rightBlockX - this.barcodePadding; 
+        const skuTextHeight = this.skuTextFontSize * 1.2; 
+        const gap1 = 4; 
+        const gap2 = 2; 
+        const numberTextHeight = this.barcodeNumberFontSize * 1.2;
+        const rightBlockHeight = skuTextHeight + gap1 + this.barcodeTargetHeight + gap2 + numberTextHeight; 
+        const rightBlockY = (this.stickerHeight / 2) - (rightBlockHeight / 2); 
+
+        doc.fontSize(this.skuTextFontSize)
+           .text(productData.product_code || 'SKU-TEST', rightBlockX, rightBlockY, { width: rightBlockWidth, align: 'center' });
+
+        const barcodeX = rightBlockX + (rightBlockWidth / 2) - (this.barcodeTargetWidth / 2);
+        const barcodeY = rightBlockY + skuTextHeight + gap1;
+        doc.image(barcodeBuffer, barcodeX, barcodeY, { width: this.barcodeTargetWidth, height: this.barcodeTargetHeight });
+
+        const displayedBarcode = productData.product_barcode && productData.product_barcode.length >= 12 
+            ? productData.product_barcode : '1234567890128'; 
+        doc.fontSize(this.barcodeNumberFontSize) 
+           .text(displayedBarcode, barcodeX, barcodeY + this.barcodeTargetHeight + gap2, { width: this.barcodeTargetWidth, align: 'center' });
+    }
     
     return new Promise((resolve, reject) => {
       doc.on('end', async () => {
         const pdfBuffer = Buffer.concat(buffers);
-        // Return the PDFLibDocument ready for merging
         const pdfDoc = await PDFLibDocument.load(pdfBuffer);
         resolve(pdfDoc);
       });
@@ -176,9 +190,7 @@ class LabelGenerator {
     });
   }
 
-  // --- MAIN LOGIC CHANGE IS HERE ---
   async createCompleteLabelPack(orderData, marketplaceLabel) {
-    // 1. PROCESS MARKETPLACE LABEL
     let marketplaceLabelBuffer;
     if (typeof marketplaceLabel === 'string') {
       marketplaceLabelBuffer = this.base64ToBuffer(marketplaceLabel);
@@ -191,23 +203,24 @@ class LabelGenerator {
     const marketplacePdf = await PDFLibDocument.load(marketplaceLabelBuffer);
     const mergedPdf = await PDFLibDocument.create();
 
-    // Copy Marketplace Label Page(s) - This is Page 1
     const marketplacePages = await mergedPdf.copyPages(marketplacePdf, marketplacePdf.getPageIndices());
     marketplacePages.forEach((page) => mergedPdf.addPage(page));
 
-    // 2. PREPARE PRODUCT DATA
+    // Handle single or multi product structures
     let productsToProcess = [];
     if (orderData.products && Array.isArray(orderData.products) && orderData.products.length > 0) {
         productsToProcess = orderData.products;
     } else if (orderData.product_barcode) {
-        // Fallback for single-product structure
         productsToProcess = [{
             product_barcode: orderData.product_barcode,
             product_code: orderData.product_code
         }];
     }
     
-    // 3. GENERATE PRODUCT LABELS
+    // Determine Marketplace from orderData
+    // We assume orderData.marketplace or orderData.source contains 'uzum' or 'yandex'
+    const marketplace = orderData.marketplace || orderData.source || 'default';
+
     for (const product of productsToProcess) {
         const productData = {
             order_id: orderData.order_id,
@@ -215,22 +228,16 @@ class LabelGenerator {
             product_code: product.product_code,
         }; 
 
-        // Generate the single sticker PDF once (optimization)
-        const stickerPdf = await this.createStickersPagePdf(productData);
+        // Pass the marketplace string here
+        const stickerPdf = await this.createStickersPagePdf(productData, marketplace);
 
-        // Force exactly 2 copies of the label per product
-        // 1st copy: For the product itself
-        // 2nd copy: For outside the package
         const labelsNeeded = 2;
-
         for (let i = 0; i < labelsNeeded; i++) {
-            // Copy the page from the generated sticker PDF
             const [page] = await mergedPdf.copyPages(stickerPdf, [0]);
             mergedPdf.addPage(page);
         }
     }
 
-    // 4. SAVE
     const mergedPdfBytes = await mergedPdf.save();
     return Buffer.from(mergedPdfBytes);
   }
@@ -249,21 +256,11 @@ app.post('/generate-label', async (req, res) => {
     const { orderData, marketplaceLabel } = req.body;
 
     if (!orderData || !marketplaceLabel) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: orderData and marketplaceLabel' 
-      });
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Validation
-    if (!orderData.order_id || (!orderData.products && !orderData.product_barcode)) {
-         return res.status(400).json({ 
-            error: 'orderData must include order_id and either a "products" array or a single "product_barcode" for fallback.' 
-         });
-    }
-
-    console.log('Generating label for order:', orderData.order_id);
+    // Pass orderData (which should now contain "marketplace": "uzum" or "yandex")
     const pdfBuffer = await generator.createCompleteLabelPack(orderData, marketplaceLabel);
-    console.log('Label generated successfully, size:', pdfBuffer.length);
 
     res.json({
       success: true,
@@ -273,10 +270,7 @@ app.post('/generate-label', async (req, res) => {
 
   } catch (error) {
     console.error('Label generation error:', error);
-    res.status(500).json({ 
-      error: 'Failed to generate label',
-      message: error.message 
-    });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -284,19 +278,7 @@ app.post('/generate-from-order', async (req, res) => {
   try {
     const { orderData, marketplaceLabelUrl, authHeaders } = req.body;
 
-    if (!orderData || !marketplaceLabelUrl) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: orderData and marketplaceLabelUrl' 
-      });
-    }
-
-    if (!orderData.order_id || (!orderData.products && !orderData.product_barcode)) {
-         return res.status(400).json({ 
-            error: 'orderData must include order_id and either a "products" array or a single "product_barcode" for fallback.' 
-         });
-    }
-
-    console.log('Fetching marketplace label from:', marketplaceLabelUrl);
+    if (!orderData || !marketplaceLabelUrl) return res.status(400).json({ error: 'Missing fields' });
 
     const response = await axios.get(marketplaceLabelUrl, {
       headers: authHeaders || {},
@@ -304,10 +286,7 @@ app.post('/generate-from-order', async (req, res) => {
     });
 
     const marketplaceLabel = Buffer.from(response.data);
-    console.log('Marketplace label fetched, generating PDF...');
-
     const pdfBuffer = await generator.createCompleteLabelPack(orderData, marketplaceLabel);
-    console.log('Label generated successfully');
 
     res.json({
       success: true,
@@ -317,10 +296,7 @@ app.post('/generate-from-order', async (req, res) => {
 
   } catch (error) {
     console.error('Label generation error:', error);
-    res.status(500).json({ 
-      error: 'Failed to generate label',
-      message: error.message 
-    });
+    res.status(500).json({ error: error.message });
   }
 });
 
