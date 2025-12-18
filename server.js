@@ -89,25 +89,18 @@ class LabelGenerator {
     doc.on('data', buffers.push.bind(buffers));
 
     // Normalize marketplace name to lowercase for comparison
-    const marketplaceLower = (marketplace || '').toLowerCase();
-
-    // Determine which elements to generate based on marketplace
-    const useQRCode = marketplaceLower === 'uzum';
-    const useBarcode = marketplaceLower === 'yandex';
-
-    // Generate only the needed elements
-    let barcodeBuffer, qrCodeBuffer;
+    const marketplaceLower = (marketplace || '').toLowerCase().trim();
     
-    if (useBarcode) {
-      barcodeBuffer = await this.generateBarcode(productData.product_barcode);
-    }
-    
-    if (useQRCode) {
-      qrCodeBuffer = await this.generateQRCode(productData);
+    console.log(`Creating sticker for marketplace: "${marketplaceLower}"`);
+
+    // Validate marketplace
+    if (marketplaceLower !== 'uzum' && marketplaceLower !== 'yandex') {
+      throw new Error(`Invalid marketplace: "${marketplace}". Must be "uzum" or "yandex"`);
     }
 
     // --- UZUM LAYOUT: QR Code only (centered) ---
-    if (useQRCode) {
+    if (marketplaceLower === 'uzum') {
+      const qrCodeBuffer = await this.generateQRCode(productData);
       const kidslandTextHeight = 10; 
       const totalBlockHeight = this.qrCodeTargetSize + this.padding + kidslandTextHeight;
       
