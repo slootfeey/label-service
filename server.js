@@ -84,22 +84,51 @@ class LabelGenerator {
     // Generate ONLY QR Code
     const qrCodeBuffer = await this.generateQRCode(productData);
     
+    const skuTextHeight = this.skuTextFontSize * 1.2;
+    const gap1 = 4;
+    const barcodeNumberHeight = this.barcodeNumberFontSize * 1.2;
+    const gap2 = 2;
     const kidslandTextHeight = 10;
-    const totalBlockHeight = this.qrCodeTargetSize + this.padding + kidslandTextHeight;
     
-    // Center everything
+    // Total height needed
+    const totalBlockHeight = skuTextHeight + gap1 + this.qrCodeTargetSize + 
+                           gap2 + barcodeNumberHeight + this.padding + kidslandTextHeight;
+    
+    // Center the entire block vertically
+    const blockY = (this.stickerHeight / 2) - (totalBlockHeight / 2);
+    
+    // 1. Product Code at top (centered)
+    const skuTextY = blockY;
+    doc.fontSize(this.skuTextFontSize)
+       .text(productData.product_code || 'SKU-TEST-001', this.padding, skuTextY, {
+         width: this.stickerWidth - (this.padding * 2),
+         align: 'center'
+       });
+    
+    // 2. QR Code in middle (centered)
+    const qrY = skuTextY + skuTextHeight + gap1;
     const qrX = (this.stickerWidth / 2) - (this.qrCodeTargetSize / 2);
-    const qrY = (this.stickerHeight / 2) - (totalBlockHeight / 2);
     
     doc.image(qrCodeBuffer, qrX, qrY, {
       width: this.qrCodeTargetSize,
       height: this.qrCodeTargetSize
     });
 
-    const kidslandY = qrY + this.qrCodeTargetSize + 2;
+    // 3. Barcode number below QR (centered)
+    const barcodeNumberY = qrY + this.qrCodeTargetSize + gap2;
+    const displayedBarcode = productData.product_barcode || '2000000099064';
+    
+    doc.fontSize(this.barcodeNumberFontSize)
+       .text(displayedBarcode, this.padding, barcodeNumberY, {
+         width: this.stickerWidth - (this.padding * 2),
+         align: 'center'
+       });
+
+    // 4. Kidsland text at bottom (centered)
+    const kidslandY = barcodeNumberY + barcodeNumberHeight + this.padding;
     doc.fontSize(this.kidslandFontSize)
-       .text('kidsland', qrX, kidslandY, {
-         width: this.qrCodeTargetSize,
+       .text('kidsland', this.padding, kidslandY, {
+         width: this.stickerWidth - (this.padding * 2),
          align: 'center'
        });
 
