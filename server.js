@@ -280,11 +280,12 @@ class LabelGenerator {
         stickerPdf = await this.createYandexSticker(productData);
       }
 
-      // Add 2 copies
-      for (let i = 0; i < 2; i++) {
+      // Add N copies (configurable, default 2)
+      const stickerCopies = orderData.productLabelCopies || 1;
+      for (let i = 0; i < stickerCopies; i++) {
         const [page] = await mergedPdf.copyPages(stickerPdf, [0]);
         mergedPdf.addPage(page);
-        console.log(`  Added ${marketplace} sticker copy ${i + 1}/2`);
+        console.log(`  Added ${marketplace} sticker copy ${i + 1}/${stickerCopies}`);
       }
     }
 
