@@ -23,6 +23,7 @@ class LabelGenerator {
     this.kidslandFontSize = 7;
     this.padding = 4;
     this.barcodePadding = 2;
+    this.fontPath = './fonts/Roboto-Regular.ttf';
   }
 
   async generateBarcode(data) {
@@ -78,8 +79,9 @@ class LabelGenerator {
       margins: { top: 0, bottom: 0, left: 0, right: 0 }
     });
 
-    const buffers = [];
-    doc.on('data', buffers.push.bind(buffers));
+    cconst buffers = [];
+doc.font(this.fontPath);
+doc.on('data', buffers.push.bind(buffers));
 
     // Generate ONLY QR Code
     const qrCodeBuffer = await this.generateQRCode(productData);
@@ -152,7 +154,8 @@ class LabelGenerator {
     });
 
     const buffers = [];
-    doc.on('data', buffers.push.bind(buffers));
+doc.font(this.fontPath);
+doc.on('data', buffers.push.bind(buffers));
 
     // Generate ONLY Barcode
     const barcodeBuffer = await this.generateBarcode(productData.product_barcode);
