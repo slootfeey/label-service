@@ -79,7 +79,7 @@ class LabelGenerator {
       margins: { top: 0, bottom: 0, left: 0, right: 0 }
     });
 
-    cconst buffers = [];
+    const buffers = [];
 doc.font(this.fontPath);
 doc.on('data', buffers.push.bind(buffers));
 
